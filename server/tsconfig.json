@@ -1,0 +1,22 @@
+{
+    "compilerOptions": {
+        "target": "ES2020",
+        "module": "commonjs",
+        "outDir": "./dist",
+        "rootDir": "./src",
+        "strict": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "resolveJsonModule": true
+    },
+    "include": [
+        "src/**/*",
+        "../client/src/lib/useWebRTC.ts",
+        "../client/src/lib/webrtc.ts"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist"
+    ]
+}

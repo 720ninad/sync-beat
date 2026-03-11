@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "SyncBeat",
+    "slug": "syncbeat",
+    "scheme": "syncbeat",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#070710"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.syncbeat.app"
+    },
+    "android": {
+      "package": "com.syncbeat.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#070710",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#7B6EFF",
+          "sounds": []
+        }
+      ]
+    ]
+  }
+}
