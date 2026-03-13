@@ -6,7 +6,7 @@ import { createServer } from 'http';
 import jwt from 'jsonwebtoken';
 import { Server } from 'socket.io';
 import { db } from './db';
-import { friendships } from './db/schema';
+import { friendships, users } from './db/schema';
 import { setUserOffline, setUserOnline } from './lib/redis';
 import authRoutes from './routes/auth.routes';
 import forgotPasswordRoutes from './routes/forgot-password.routes';
@@ -83,6 +83,13 @@ io.on('connection', async (socket) => {
         console.log(`🔴 ${user.username} disconnected`);
         await setUserOffline(user.id);
 
+        // Update lastSeenAt in database
+        try {
+            await db.update(users).set({ lastSeenAt: new Date() }).where(eq(users.id, user.id));
+        } catch (err) {
+            console.error('Failed to update lastSeenAt on disconnect:', err);
+        }
+
         // Notify friends offline
         acceptedFriends.forEach(f => {
             const friendId = f.senderId === user.id ? f.receiverId : f.senderId;
@@ -99,7 +106,8 @@ io.on('connection', async (socket) => {
 
 app.use(cors());
 app.use(express.json());
-app.use(generalLimiter);
+// Rate limiting disabled for development
+// app.use(generalLimiter);
 app.get('/', (req, res) => {
     res.json({ status: 'ok', message: 'Welcome to SyncBeat API 🎵' });
 });
@@ -113,10 +121,10 @@ app.get('/health', async (req, res) => {
     }
 });
 
-app.use('/api/auth', authLimiter, authRoutes);
-app.use('/api/forgot-password', otpLimiter, forgotPasswordRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/forgot-password', forgotPasswordRoutes);
 app.use('/api/friends', friendsRoutes);
-app.use('/api/tracks', uploadLimiter, tracksRoutes);
+app.use('/api/tracks', tracksRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/notifications', notificationsRoutes);
 

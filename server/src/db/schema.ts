@@ -44,11 +44,19 @@ export const tracks = pgTable('tracks', {
     title: text('title').notNull(),
     artist: text('artist').default('Unknown').notNull(),
     duration: integer('duration').notNull(),            // seconds
-    fileUrl: text('file_url').notNull(),               // Cloudflare R2 URL
+    fileUrl: text('file_url').notNull(),               // Cloudflare R2 URL or empty for external
     fileSize: integer('file_size').notNull(),           // bytes
     mimeType: text('mime_type').default('audio/mpeg').notNull(),
     isPublic: boolean('is_public').default(false).notNull(),
     playCount: integer('play_count').default(0).notNull(),
+
+    // External track fields
+    externalId: text('external_id'),                    // ID from external service
+    externalSource: text('external_source'),            // 'lastfm', 'musicbrainz', 'theaudiodb'
+    albumName: text('album_name'),                      // Album name
+    imageUrl: text('image_url'),                        // Album/track artwork URL
+    previewUrl: text('preview_url'),                    // Preview/sample URL if available
+
     createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 

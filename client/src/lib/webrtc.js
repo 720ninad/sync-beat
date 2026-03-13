@@ -1,44 +1,51 @@
-import { getSocket } from './socket';
-
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.requestMicrophonePermission = requestMicrophonePermission;
+exports.getLocalStream = getLocalStream;
+exports.createPeerConnection = createPeerConnection;
+exports.createOffer = createOffer;
+exports.handleOffer = handleOffer;
+exports.handleAnswer = handleAnswer;
+exports.handleIceCandidate = handleIceCandidate;
+exports.toggleMute = toggleMute;
+exports.getMuteState = getMuteState;
+exports.cleanupWebRTC = cleanupWebRTC;
+const socket_1 = require("./socket");
 const STUN_SERVERS = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
     ],
 };
-
-let peerConnection: RTCPeerConnection | null = null;
-let localStream: MediaStream | null = null;
+let peerConnection = null;
+let localStream = null;
 let isMuted = false;
 let permissionRequested = false;
-
 // ─── REQUEST MICROPHONE EARLY ────────────────────────
-export async function requestMicrophonePermission(): Promise<boolean> {
+async function requestMicrophonePermission() {
     if (permissionRequested && localStream) {
         console.log('🎤 Microphone already granted');
         return true;
     }
-
     try {
         console.log('🎤 Requesting microphone permission...');
         await getLocalStream();
         permissionRequested = true;
         console.log('✅ Microphone permission granted');
         return true;
-    } catch (err) {
+    }
+    catch (err) {
         console.error('❌ Microphone permission denied:', err);
         return false;
     }
 }
-
 // ─── GET MICROPHONE ──────────────────────────────────
-export async function getLocalStream(): Promise<MediaStream> {
+async function getLocalStream() {
     // Reuse existing stream if available
     if (localStream && localStream.active) {
         console.log('♻️ Reusing existing microphone stream');
         return localStream;
     }
-
     console.log('🎤 Getting new microphone stream...');
     localStream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -50,30 +57,22 @@ export async function getLocalStream(): Promise<MediaStream> {
     });
     return localStream;
 }
-
 // ─── CREATE PEER CONNECTION ──────────────────────────
-export function createPeerConnection(
-    callId: string,
-    targetId: string,
-    onRemoteStream: (stream: MediaStream) => void,
-): RTCPeerConnection {
-    const socket = getSocket();
-    if (!socket) throw new Error('Socket not connected');
-
+function createPeerConnection(callId, targetId, onRemoteStream) {
+    const socket = (0, socket_1.getSocket)();
+    if (!socket)
+        throw new Error('Socket not connected');
     peerConnection = new RTCPeerConnection(STUN_SERVERS);
-
     // Add local tracks
     localStream?.getTracks().forEach(track => {
-        peerConnection!.addTrack(track, localStream!);
+        peerConnection.addTrack(track, localStream);
     });
-
     // Receive remote stream
     peerConnection.ontrack = (event) => {
         if (event.streams?.[0]) {
             onRemoteStream(event.streams[0]);
         }
     };
-
     // Send ICE candidates
     peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
@@ -84,87 +83,69 @@ export function createPeerConnection(
             });
         }
     };
-
     peerConnection.onconnectionstatechange = () => {
         console.log('🔗 WebRTC state:', peerConnection?.connectionState);
     };
-
     return peerConnection;
 }
-
 // ─── CALLER: CREATE OFFER ────────────────────────────
-export async function createOffer(
-    callId: string,
-    targetId: string,
-    onRemoteStream: (stream: MediaStream) => void,
-) {
-    const socket = getSocket();
-    if (!socket) return;
-
+async function createOffer(callId, targetId, onRemoteStream) {
+    const socket = (0, socket_1.getSocket)();
+    if (!socket)
+        return;
     await getLocalStream();
     const pc = createPeerConnection(callId, targetId, onRemoteStream);
-
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-
     socket.emit('webrtc:offer', { callId, offer, targetId });
     console.log('📤 Offer sent to', targetId);
 }
-
 // ─── RECEIVER: HANDLE OFFER + CREATE ANSWER ──────────
-export async function handleOffer(
-    callId: string,
-    callerId: string,
-    offer: RTCSessionDescriptionInit,
-    onRemoteStream: (stream: MediaStream) => void,
-) {
-    const socket = getSocket();
-    if (!socket) return;
-
+async function handleOffer(callId, callerId, offer, onRemoteStream) {
+    const socket = (0, socket_1.getSocket)();
+    if (!socket)
+        return;
     await getLocalStream();
     const pc = createPeerConnection(callId, callerId, onRemoteStream);
-
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-
     socket.emit('webrtc:answer', { callId, answer, targetId: callerId });
     console.log('📤 Answer sent to', callerId);
 }
-
 // ─── HANDLE ANSWER ───────────────────────────────────
-export async function handleAnswer(answer: RTCSessionDescriptionInit) {
-    if (!peerConnection) return;
+async function handleAnswer(answer) {
+    if (!peerConnection)
+        return;
     await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
     console.log('✅ Remote description set');
 }
-
 // ─── HANDLE ICE CANDIDATE ────────────────────────────
-export async function handleIceCandidate(candidate: RTCIceCandidateInit) {
-    if (!peerConnection) return;
+async function handleIceCandidate(candidate) {
+    if (!peerConnection)
+        return;
     try {
         await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-    } catch (err) {
+    }
+    catch (err) {
         console.error('ICE candidate error:', err);
     }
 }
-
 // ─── MUTE / UNMUTE ───────────────────────────────────
-export function toggleMute(): boolean {
-    if (!localStream) return isMuted;
+function toggleMute() {
+    if (!localStream)
+        return isMuted;
     localStream.getAudioTracks().forEach(track => {
         track.enabled = isMuted; // flip
     });
     isMuted = !isMuted;
     return isMuted;
 }
-
-export function getMuteState(): boolean {
+function getMuteState() {
     return isMuted;
 }
-
 // ─── CLEANUP ─────────────────────────────────────────
-export function cleanupWebRTC() {
+function cleanupWebRTC() {
     localStream?.getTracks().forEach(track => track.stop());
     peerConnection?.close();
     localStream = null;
