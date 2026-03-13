@@ -1,5 +1,5 @@
 import {
-    View, Text, StyleSheet, TouchableOpacity, Animated,
+    View, Text, StyleSheet, TouchableOpacity, Animated, PanResponder,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useRef, useEffect, useState } from 'react';
@@ -59,14 +59,64 @@ export default function PlayerScreen() {
     const [isLowVolume, setIsLowVolume] = useState(false);
     const [currentTitle, setCurrentTitle] = useState(initTrackTitle || 'Now Playing');
     const [currentEmoji, setCurrentEmoji] = useState(initTrackEmoji || '🎵');
+    const [timelineWidth, setTimelineWidth] = useState(0);
+    const [timelinePressed, setTimelinePressed] = useState(false);
 
     // Refs so socket handlers always have latest values
     const currentTitleRef = useRef(initTrackTitle || 'Now Playing');
     const currentEmojiRef = useRef(initTrackEmoji || '🎵');
     const currentUrlRef = useRef(initTrackUrl || '');
+    const timelineRef = useRef<View>(null);
 
     const syncRef = useRef<SyncEngine | null>(null);
     const initDone = useRef(false);
+
+    // Timeline PanResponder for both click and drag functionality
+    const timelinePanResponder = PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: (evt, gestureState) => {
+            return Math.abs(gestureState.dx) > 2 || Math.abs(gestureState.dy) > 2;
+        },
+        onPanResponderGrant: (evt) => {
+            setTimelinePressed(true);
+            const { locationX } = evt.nativeEvent;
+            if (isFinite(locationX) && timelineWidth > 0 && loadedMs > 0) {
+                const position = Math.max(0, Math.min(1, locationX / timelineWidth));
+                if (isFinite(position)) {
+                    const newPosition = position * loadedMs;
+                    if (isFinite(newPosition)) {
+                        setPositionMs(newPosition);
+                    }
+                }
+            }
+        },
+        onPanResponderMove: (evt) => {
+            const { locationX } = evt.nativeEvent;
+            if (!isFinite(locationX) || timelineWidth <= 0 || loadedMs <= 0) return;
+            const position = Math.max(0, Math.min(1, locationX / timelineWidth));
+            if (isFinite(position)) {
+                const newPosition = position * loadedMs;
+                if (isFinite(newPosition)) {
+                    setPositionMs(newPosition);
+                }
+            }
+        },
+        onPanResponderRelease: (evt) => {
+            const { locationX } = evt.nativeEvent;
+            if (!isFinite(locationX) || timelineWidth <= 0) {
+                setTimelinePressed(false);
+                return;
+            }
+            const position = Math.max(0, Math.min(1, locationX / timelineWidth));
+            if (isFinite(position) && loadedMs > 0) {
+                const newPositionMs = position * loadedMs;
+                if (isFinite(newPositionMs)) {
+                    syncRef.current?.seek(newPositionMs);
+                }
+            }
+            setTimelinePressed(false);
+        },
+    });
 
     const updateTrackInfo = (title: string, emoji: string, url?: string) => {
         setCurrentTitle(title); currentTitleRef.current = title;
@@ -280,9 +330,24 @@ export default function PlayerScreen() {
             </View>
 
             <View style={s.progressSection}>
-                <View style={s.progressTrack}>
-                    <View style={[s.progressFill, { width: `${Math.min(progress * 100, 100)}%` as any }]} />
-                    <View style={[s.progressThumb, { left: `${Math.min(progress * 100, 97)}%` as any }]} />
+                <View style={s.progressTrack} {...timelinePanResponder.panHandlers}>
+                    <View
+                        ref={timelineRef}
+                        style={s.progressContainer}
+                        onLayout={(event) => {
+                            const { width } = event.nativeEvent.layout;
+                            setTimelineWidth(width);
+                        }}
+                    >
+                        <View style={s.progressBackground}>
+                            <View style={[s.progressFill, { width: `${Math.min(progress * 100, 100)}%` as any }]} />
+                            <View style={[
+                                s.progressThumb,
+                                timelinePressed && s.progressThumbPressed,
+                                { left: `${Math.min(progress * 100, 97)}%` as any }
+                            ]} />
+                        </View>
+                    </View>
                 </View>
                 <View style={s.timeRow}>
                     <Text style={s.timeText}>{formatTime(positionMs)}</Text>
@@ -389,6 +454,12 @@ const s = StyleSheet.create({
 
     progressSection: { paddingHorizontal: 24, gap: 8 },
     progressTrack: {
+        paddingVertical: 8,
+    },
+    progressContainer: {
+        width: '100%',
+    },
+    progressBackground: {
         height: 4, borderRadius: 2,
         backgroundColor: 'rgba(255,255,255,0.08)',
         position: 'relative', overflow: 'visible',
@@ -399,6 +470,10 @@ const s = StyleSheet.create({
         backgroundColor: Colors.primary, marginLeft: -7,
         shadowColor: Colors.primary, shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.6, shadowRadius: 4, elevation: 4,
+    },
+    progressThumbPressed: {
+        width: 18, height: 18, borderRadius: 9, top: -7, marginLeft: -9,
+        shadowOpacity: 0.8, shadowRadius: 6,
     },
     timeRow: { flexDirection: 'row', justifyContent: 'space-between' },
     timeText: { fontSize: 12, color: Colors.textMuted },

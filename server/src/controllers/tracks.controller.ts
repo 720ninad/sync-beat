@@ -98,6 +98,8 @@ export async function getPublicTracks(req: Request, res: Response) {
                 fileUrl: tracks.fileUrl,
                 playCount: tracks.playCount,
                 createdAt: tracks.createdAt,
+                previewUrl: tracks.previewUrl,
+                mimeType: tracks.mimeType,
             })
             .from(tracks)
             .where(eq(tracks.isPublic, true))

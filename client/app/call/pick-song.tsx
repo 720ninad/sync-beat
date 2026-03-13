@@ -153,8 +153,22 @@ export default function PickSongScreen() {
             const engine = syncRef.current!;
             if (myUserId) engine.myUserId = myUserId;
 
+            // Determine the correct audio URL
+            let audioUrl: string;
+            if (track.fileUrl && track.mimeType !== 'external') {
+                // Uploaded track
+                audioUrl = track.fileUrl;
+            } else if (track.previewUrl) {
+                // External track with preview URL
+                audioUrl = track.previewUrl;
+            } else {
+                toast.error('No audio available for this track');
+                setStarting(null);
+                return;
+            }
+
             await engine.loadTrack({
-                url: track.fileUrl,
+                url: audioUrl,
                 title: track.title,
                 emoji: '🎵',
                 durationMs: (track.duration || 0) * 1000,
@@ -172,7 +186,7 @@ export default function PickSongScreen() {
                     targetId,
                     trackTitle: track.title,
                     trackEmoji: '🎵',
-                    trackUrl: track.fileUrl,
+                    trackUrl: audioUrl,
                     durationMs: String((track.duration || 0) * 1000),
                     pickerUserId: myUserId || myUserRef.current,
                 },
