@@ -656,7 +656,7 @@ export default function LibraryScreen() {
                 <ScrollView
                     style={s.scroll}
                     showsVerticalScrollIndicator={false}
-                    contentContainerStyle={{ paddingBottom: 100 }}
+                    contentContainerStyle={{ paddingBottom: currentlyPlaying ? 200 : 100 }}
                     refreshControl={
                         tab !== 'search' ? (
                             <RefreshControl
