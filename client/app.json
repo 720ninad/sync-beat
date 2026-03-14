@@ -42,7 +42,7 @@
       ]
     ],
     "extra": {
-      "apiUrl": "https://sync-beat-18qf.onrender.com"
+      "apiUrl": "https://sync-beat-18qf.onrender.com/api"
     }
   }
 }
