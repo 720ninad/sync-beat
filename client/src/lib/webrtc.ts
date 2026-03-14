@@ -4,6 +4,21 @@ const STUN_SERVERS = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
+        {
+            urls: 'turn:relay.metered.ca:80',
+            username: '720ninad@gmail.com',
+            credential: 'Ninad@2001',
+        },
+        {
+            urls: 'turn:relay.metered.ca:443',
+            username: '720ninad@gmail.com',
+            credential: 'Ninad@2001',
+        },
+        {
+            urls: 'turn:relay.metered.ca:443?transport=tcp',
+            username: '720ninad@gmail.com',
+            credential: 'Ninad@2001',
+        },
     ],
 };
 
