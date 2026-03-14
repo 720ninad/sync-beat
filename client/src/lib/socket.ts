@@ -1,7 +1,9 @@
 import { io, Socket } from 'socket.io-client';
 import { getToken } from './storage';
+import Constants from 'expo-constants';
 
-const SERVER_URL = 'http://localhost:3000'; // change to your IP if testing on phone
+// Use ngrok URL from environment variable if available, otherwise localhost
+const SERVER_URL = Constants.expoConfig?.extra?.apiUrl?.replace('/api', '') || 'http://localhost:3000';
 
 let socket: Socket | null = null;
 

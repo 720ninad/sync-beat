@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: syncbeat-server
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: JWT_SECRET
+        fromGroup: syncbeat-secrets
+      - key: DATABASE_URL
+        fromGroup: syncbeat-secrets
+      - key: REDIS_URL
+        fromGroup: syncbeat-secrets
+      - key: R2_ACCOUNT_ID
+        fromGroup: syncbeat-secrets
+      - key: R2_ACCESS_KEY_ID
+        fromGroup: syncbeat-secrets
+      - key: R2_SECRET_ACCESS_KEY
+        fromGroup: syncbeat-secrets
+      - key: R2_BUCKET_NAME
+        fromGroup: syncbeat-secrets
+      - key: R2_PUBLIC_URL
+        fromGroup: syncbeat-secrets

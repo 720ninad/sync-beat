@@ -11,9 +11,7 @@
         "resolveJsonModule": true
     },
     "include": [
-        "src/**/*",
-        "../client/src/lib/useWebRTC.ts",
-        "../client/src/lib/webrtc.ts"
+        "src/**/*"
     ],
     "exclude": [
         "node_modules",

@@ -132,4 +132,17 @@ httpServer.listen(PORT, () => {
     console.log(`✅ Server running on http://localhost:${PORT}`);
 });
 
+// ─── KEEP ALIVE (prevents Render free tier sleep) ────
+if (process.env.NODE_ENV === 'production') {
+    const SELF_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+    setInterval(async () => {
+        try {
+            await fetch(`${SELF_URL}/health`);
+            console.log('💓 Keep-alive ping sent');
+        } catch (err) {
+            console.warn('Keep-alive ping failed:', err);
+        }
+    }, 10 * 60 * 1000); // every 10 minutes
+}
+
 export default app;
