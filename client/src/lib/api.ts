@@ -1,5 +1,6 @@
 import axios from 'axios';
 import Constants from 'expo-constants';
+import { getToken } from './storage';
 
 const BASE_URL =
     Constants.expoConfig?.extra?.apiUrl ||
@@ -13,8 +14,8 @@ export const api = axios.create({
 });
 
 // Auto attach token to every request
-api.interceptors.request.use((config) => {
-    const token = global.localStorage?.getItem('token');
+api.interceptors.request.use(async (config) => {
+    const token = await getToken();
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
