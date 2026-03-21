@@ -327,17 +327,31 @@ export async function streamTrack(req: Request, res: Response) {
             return;
         }
 
-        // Proxy the audio stream from the extracted URL
-        const upstream = await fetch(audioUrl);
+        const rangeHeader = req.headers['range'];
+
+        // Forward range header to upstream so seeking works
+        const upstreamHeaders: Record<string, string> = {};
+        if (rangeHeader) upstreamHeaders['Range'] = rangeHeader;
+
+        const upstream = await fetch(audioUrl, { headers: upstreamHeaders });
+
         if (!upstream.ok || !upstream.body) {
             res.status(502).json({ error: 'Failed to fetch audio stream' });
             return;
         }
 
-        res.setHeader('Content-Type', upstream.headers.get('content-type') || 'audio/mpeg');
+        const contentType = upstream.headers.get('content-type') || 'audio/mpeg';
         const contentLength = upstream.headers.get('content-length');
-        if (contentLength) res.setHeader('Content-Length', contentLength);
+        const contentRange = upstream.headers.get('content-range');
+
+        // Mirror the upstream status (206 Partial Content or 200)
+        const status = upstream.status === 206 ? 206 : 200;
+
+        res.status(status);
+        res.setHeader('Content-Type', contentType);
         res.setHeader('Accept-Ranges', 'bytes');
+        if (contentLength) res.setHeader('Content-Length', contentLength);
+        if (contentRange) res.setHeader('Content-Range', contentRange);
 
         const { Readable } = await import('stream');
         Readable.fromWeb(upstream.body as any).pipe(res);

@@ -5,6 +5,14 @@ const SERVER_URL =
     Constants.expoConfig?.extra?.apiUrl?.replace('/api', '') ||
     'http://localhost:3000';
 
+// Allow audio to play over silent switch on iOS and in background
+Audio.setAudioModeAsync({
+    allowsRecordingIOS: false,
+    staysActiveInBackground: true,
+    playsInSilentModeIOS: true,
+    shouldDuckAndroid: true,
+});
+
 interface Track {
     id: string;
     title?: string;
@@ -52,13 +60,14 @@ class AudioPlayerService {
                 return false;
             }
 
-            // Create and load new sound
+            // Create and load new sound — shouldPlay:false so we don't wait for full buffer
             const { sound } = await Audio.Sound.createAsync(
                 { uri: audioUrl },
                 {
-                    shouldPlay: true,
+                    shouldPlay: false,
                     isLooping: false,
                     volume: 1.0,
+                    progressUpdateIntervalMillis: 100,
                 }
             );
 
@@ -72,6 +81,9 @@ class AudioPlayerService {
                     this.stop();
                 }
             });
+
+            // Start playing immediately after load — no full-buffer wait
+            await sound.playAsync();
 
             return true;
         } catch (error) {
