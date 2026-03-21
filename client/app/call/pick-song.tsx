@@ -155,12 +155,17 @@ export default function PickSongScreen() {
 
             // Determine the correct audio URL
             let audioUrl: string;
+            const ytId = track.external_id || track.externalId;
             if (track.fileUrl && track.mimeType !== 'external') {
                 // Uploaded track
                 audioUrl = track.fileUrl;
             } else if (track.previewUrl) {
                 // External track with preview URL
                 audioUrl = track.previewUrl;
+            } else if (ytId && (track.source === 'youtube' || track.externalSource === 'youtube')) {
+                // YouTube track — proxy through stream endpoint
+                const serverUrl = (await import('expo-constants')).default.expoConfig?.extra?.apiUrl?.replace('/api', '') || 'http://localhost:3000';
+                audioUrl = `${serverUrl}/api/tracks/stream/${ytId}`;
             } else {
                 toast.error('No audio available for this track');
                 setStarting(null);
