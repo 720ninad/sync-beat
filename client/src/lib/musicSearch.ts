@@ -8,9 +8,9 @@ export interface ExternalTrack {
     album?: string;
     duration?: number;
     image?: string;
-    preview_url?: string;
+    preview_url?: string | null;
     external_id: string;
-    source: 'jiosaavn';
+    source: 'jiosaavn' | 'youtube';
 }
 
 const authHeader = async () => ({

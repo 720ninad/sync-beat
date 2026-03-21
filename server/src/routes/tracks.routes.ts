@@ -10,6 +10,7 @@ import {
     deleteTrack,
     searchExternalTracks,
     addExternalTrack,
+    streamTrack,
 } from '../controllers/tracks.controller';
 import { authMiddleware } from '../middleware/auth';
 
@@ -19,6 +20,9 @@ const upload = multer({
     storage,
     limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
 });
+
+// Public — no auth required for streaming
+router.get('/stream/:videoId', streamTrack);
 
 router.use(authMiddleware);
 

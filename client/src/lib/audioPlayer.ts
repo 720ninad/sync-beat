@@ -1,4 +1,9 @@
 import { Audio } from 'expo-av';
+import Constants from 'expo-constants';
+
+const SERVER_URL =
+    Constants.expoConfig?.extra?.apiUrl?.replace('/api', '') ||
+    'http://localhost:3000';
 
 interface Track {
     id: string;
@@ -11,7 +16,8 @@ interface Track {
     mimeType?: string;
     source?: string;
     externalSource?: string;
-    external_id?: string;
+    external_id?: string;   // search results (snake_case)
+    externalId?: string;    // saved DB rows (camelCase from Drizzle)
 }
 
 class AudioPlayerService {
@@ -27,15 +33,19 @@ class AudioPlayerService {
             // Determine the audio URL
             let audioUrl: string | null = null;
 
+            // Resolve the video ID regardless of casing (search = external_id, DB = externalId)
+            const ytId = track.external_id || track.externalId;
+
             if (track.fileUrl && track.mimeType !== 'external') {
-                // Uploaded track
+                // Uploaded track — use R2 file URL directly
                 audioUrl = track.fileUrl;
             } else if (track.preview_url) {
-                // External track with preview (from search results)
                 audioUrl = track.preview_url;
             } else if (track.previewUrl) {
-                // External track with preview (from database)
                 audioUrl = track.previewUrl;
+            } else if (ytId && (track.source === 'youtube' || track.externalSource === 'youtube')) {
+                // YouTube track (search result or saved) — proxy through stream endpoint
+                audioUrl = `${SERVER_URL}/api/tracks/stream/${ytId}`;
             }
 
             if (!audioUrl) {

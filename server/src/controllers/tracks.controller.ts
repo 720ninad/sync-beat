@@ -3,6 +3,7 @@ import { db } from '../db';
 import { tracks, likedTracks } from '../db/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { uploadToR2, deleteFromR2, generateTrackKey } from '../lib/r2';
+import { getAudioUrl, searchYouTube } from '../lib/ytdlp';
 // External music search interfaces
 interface ExternalTrack {
     id: string;
@@ -11,9 +12,9 @@ interface ExternalTrack {
     album?: string;
     duration?: number;
     image?: string;
-    preview_url?: string;
+    preview_url?: string | null;
     external_id: string;
-    source: 'jiosaavn';
+    source: 'jiosaavn' | 'youtube';
 }
 
 
@@ -282,91 +283,66 @@ export async function addExternalTrack(req: Request, res: Response) {
 
 async function searchFromMultipleSources(query: string): Promise<ExternalTrack[]> {
     try {
-        // Search JioSaavn API
-        const jiosaavnResults = await searchJioSaavn(query);
-        return jiosaavnResults;
+        const ytResults = await searchYouTube(query, 10);
+        const tracks = await Promise.all(ytResults.map(mapToTrack));
+        // Filter out nulls (videos where audio extraction failed)
+        return tracks.filter((t): t is ExternalTrack => t !== null);
     } catch (error) {
-        console.error('JioSaavn search error:', error);
+        console.error('YouTube search error:', error);
         return [];
     }
 }
 
-// JioSaavn search implementation
-async function searchJioSaavn(query: string): Promise<ExternalTrack[]> {
+async function mapToTrack(video: { id: string; title: string; artist: string; duration: number; thumbnail: string }): Promise<ExternalTrack | null> {
     try {
-        const searchUrl = `https://music-api-five-henna.vercel.app/api/search?query=${encodeURIComponent(query)}`;
+        const videoId = video.id;
 
-        const response = await fetch(searchUrl, {
-            method: "GET",
-            headers: {
-                "Content-Type": "application/json",
-            },
-        });
+        // Build the stream URL — audio is proxied through our endpoint
+        // No need to call getAudioUrl here; streamTrack handles extraction + caching on demand
+        return {
+            id: `yt_${videoId}`,
+            name: video.title,
+            artist: video.artist,
+            album: "",
+            duration: video.duration,
+            image: video.thumbnail,
+            preview_url: null,          // no direct URL — client uses stream endpoint
+            external_id: videoId,
+            source: "youtube" as any,   // mark as youtube so client routes to /stream/:id
+        };
+    } catch (err) {
+        console.error("Mapping error:", err);
+        return null;
+    }
+}
 
-        if (!response.ok) {
-            console.error('JioSaavn API error:', response.status);
-            return [];
+// ─── STREAM TRACK ────────────────────────────────────
+export async function streamTrack(req: Request, res: Response) {
+    try {
+        const { videoId } = req.params;
+        const audioUrl = await getAudioUrl(Array.isArray(videoId) ? videoId[0] : videoId);
+
+        if (!audioUrl) {
+            res.status(404).json({ error: 'Could not extract audio URL' });
+            return;
         }
 
-        const data = await response.json();
-        if (!data.data?.songs?.results || data.data.songs.results.length === 0) {
-            return [];
+        // Proxy the audio stream from the extracted URL
+        const upstream = await fetch(audioUrl);
+        if (!upstream.ok || !upstream.body) {
+            res.status(502).json({ error: 'Failed to fetch audio stream' });
+            return;
         }
 
-        // Get detailed info for each song
-        const detailedTracks = await Promise.all(
-            data.data.songs.results.slice(0, 10).map(async (song: any) => {
-                try {
-                    const detailUrl = `https://backend-listenfree-primary-up.vercel.app/api/songs/${song.id}`;
-                    const detailResponse = await fetch(detailUrl);
+        res.setHeader('Content-Type', upstream.headers.get('content-type') || 'audio/mpeg');
+        const contentLength = upstream.headers.get('content-length');
+        if (contentLength) res.setHeader('Content-Length', contentLength);
+        res.setHeader('Accept-Ranges', 'bytes');
 
-                    if (!detailResponse.ok) {
-                        return null;
-                    }
-
-                    const detailData = await detailResponse.json();
-                    const songDetail = detailData.data?.[0];
-                    if (!songDetail) {
-                        return null;
-                    }
-
-                    // Get the highest quality audio URL available
-                    const audioUrl = songDetail.downloadUrl?.find((url: any) => url.quality === "320kbps")?.url ||
-                        songDetail.downloadUrl?.find((url: any) => url.quality === "160kbps")?.url ||
-                        songDetail.downloadUrl?.find((url: any) => url.quality === "96kbps")?.url;
-
-                    // Get the best quality image
-                    const imageUrl = songDetail.image?.find((img: any) => img.quality === "500x500")?.url ||
-                        songDetail.image?.find((img: any) => img.quality === "150x150")?.url ||
-                        songDetail.image?.find((img: any) => img.quality === "50x50")?.url;
-
-                    // Get primary artist name
-                    const artistName = songDetail.artists?.primary?.[0]?.name ||
-                        songDetail.artists?.all?.[0]?.name ||
-                        'Unknown Artist';
-
-                    return {
-                        id: `jiosaavn_${songDetail.id}`,
-                        name: songDetail.name,
-                        artist: artistName,
-                        album: songDetail.album?.name || '',
-                        duration: songDetail.duration,
-                        image: imageUrl,
-                        preview_url: audioUrl,
-                        external_id: songDetail.id.toString(),
-                        source: 'jiosaavn' as const,
-                    };
-                } catch (error) {
-                    console.error('Error fetching song details:', error);
-                    return null;
-                }
-            })
-        );
-
-        // Filter out null results
-        return detailedTracks.filter((track): track is ExternalTrack => track !== null);
-    } catch (error) {
-        console.error('JioSaavn search error:', error);
-        return [];
+        const { Readable } = await import('stream');
+        Readable.fromWeb(upstream.body as any).pipe(res);
+    } catch (err) {
+        console.error('Stream error:', err);
+        res.status(500).json({ error: 'Streaming failed' });
     }
 }

@@ -675,15 +675,15 @@ export default function LibraryScreen() {
                             <TouchableOpacity
                                 style={[
                                     s.playButton,
-                                    (!track.preview_url && !track.previewUrl && !track.fileUrl) && s.playButtonDisabled
+                                    (!track.preview_url && !track.previewUrl && !track.fileUrl && !track.external_id && !track.externalId) && s.playButtonDisabled
                                 ]}
                                 onPress={() => handlePlayTrack(track)}
                                 activeOpacity={0.8}
-                                disabled={!track.preview_url && !track.previewUrl && !track.fileUrl}
+                                disabled={!track.preview_url && !track.previewUrl && !track.fileUrl && !track.external_id && !track.externalId}
                             >
                                 {currentlyPlaying === track.id && isPlaying ? (
                                     <Text style={s.playIcon}>⏸️</Text>
-                                ) : (!track.preview_url && !track.previewUrl && !track.fileUrl) ? (
+                                ) : (!track.preview_url && !track.previewUrl && !track.fileUrl && !track.external_id && !track.externalId) ? (
                                     <Text style={s.playIcon}>🔍</Text>
                                 ) : (
                                     <Text style={s.playIcon}>▶️</Text>
@@ -706,7 +706,10 @@ export default function LibraryScreen() {
                                     {track.album && ` · ${track.album}`}
                                     {track.duration ? ` · ${formatDuration(track.duration)}` : ''}
                                     {tab === 'search' && (
-                                        <Text style={s.sourceTag}> · JioSaavn</Text>
+                                        <Text style={s.sourceTag}> · {track.source === 'youtube' ? 'YouTube' : 'JioSaavn'}</Text>
+                                    )}
+                                    {tab !== 'search' && track.externalSource === 'youtube' && (
+                                        <Text style={s.sourceTag}> · YouTube</Text>
                                     )}
                                     {((tab === 'search' && track.preview_url) ||
                                         (tab !== 'search' && track.previewUrl)) && (
