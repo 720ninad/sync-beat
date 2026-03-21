@@ -3,7 +3,7 @@ import { router, Slot } from 'expo-router';
 import { View, StyleSheet, Platform } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { getToken } from '../src/lib/storage';
-import { connectSocket, getSocket } from '../src/lib/socket';
+import { connectSocket, getSocket, setOnReconnect, pingSocket } from '../src/lib/socket';
 import { registerCallListeners, unregisterCallListeners } from '../src/lib/call';
 import { getCallSession } from '../src/lib/callSession';
 import { toast } from '../src/lib/toast';
@@ -19,8 +19,16 @@ export default function RootLayout() {
             try {
                 const token = await getToken();
                 if (token) {
+                    // Re-register call listeners on every reconnect (handles background/foreground)
+                    setOnReconnect(() => {
+                        unregisterCallListeners();
+                        registerCallListeners();
+                        // Re-ping presence immediately after reconnect
+                        pingSocket();
+                    });
                     await connectSocket();
                     registerCallListeners();
+                    pingSocket();
                 }
             } catch (err: any) {
                 console.error('Socket init error:', err);
@@ -31,6 +39,12 @@ export default function RootLayout() {
         };
         init();
         return () => { unregisterCallListeners(); };
+    }, []);
+
+    // ─── GLOBAL PRESENCE PING (keeps Redis TTL alive on all screens) ─────
+    useEffect(() => {
+        const interval = setInterval(pingSocket, 25000);
+        return () => clearInterval(interval);
     }, []);
 
     // ─── RELOAD RECOVERY ─────────────────────────────────

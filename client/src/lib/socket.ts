@@ -2,10 +2,15 @@ import { io, Socket } from 'socket.io-client';
 import { getToken } from './storage';
 import Constants from 'expo-constants';
 
-// Use ngrok URL from environment variable if available, otherwise localhost
 const SERVER_URL = Constants.expoConfig?.extra?.apiUrl?.replace('/api', '') || 'http://localhost:3000';
 
 let socket: Socket | null = null;
+// Callback invoked every time the socket (re)connects so listeners can be re-bound
+let onReconnectCallback: (() => void) | null = null;
+
+export function setOnReconnect(cb: () => void) {
+    onReconnectCallback = cb;
+}
 
 export async function connectSocket(): Promise<Socket> {
     if (socket?.connected) return socket;
@@ -23,6 +28,8 @@ export async function connectSocket(): Promise<Socket> {
 
     socket.on('connect', () => {
         console.log('🟢 Socket connected:', socket?.id);
+        // Re-register call listeners after every reconnect
+        onReconnectCallback?.();
     });
 
     socket.on('disconnect', (reason) => {
@@ -54,7 +61,6 @@ export function disconnectSocket() {
     }
 }
 
-// Send presence ping via socket (replaces HTTP ping)
 export function pingSocket() {
     socket?.emit('presence:ping');
 }

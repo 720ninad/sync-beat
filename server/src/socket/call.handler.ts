@@ -20,11 +20,13 @@ export function registerCallHandlers(io: Server, socket: Socket) {
             socket.join(`call:${session.id}`);
             console.log(`🏠 ${caller.username} joined room call:${session.id}`);
 
+            // Emit to receiver's socket room (works if they're connected)
             io.to(`user:${receiverId}`).emit('call:incoming', {
                 callId: session.id, callerId: caller.id,
                 name: caller.name, username: caller.username,
             });
-            // Push to receiver if they're not connected
+
+            // Push notification to receiver (works if app is backgrounded/closed)
             try {
                 const [receiver] = await db.select().from(users).where(eq(users.id, receiverId));
                 if (receiver?.pushToken) {
@@ -39,22 +41,10 @@ export function registerCallHandlers(io: Server, socket: Socket) {
                 console.error('Push on call:initiate error:', err);
             }
 
-            // Push missed call to caller
-            try {
-                const [callerUser] = await db.select().from(users).where(eq(users.id, caller.id));
-                if (callerUser?.pushToken) {
-                    await sendPushNotification(
-                        callerUser.pushToken,
-                        '📵 Missed call',
-                        `${caller.name} — your call wasn't answered`,
-                        { type: 'missed_call', callId: session.id },
-                    );
-                }
-            } catch { }
-
             socket.emit('call:initiated', { callId: session.id, receiverId });
             console.log(`📞 ${caller.username} calling ${receiverId}`);
 
+            // Auto-miss after 30 seconds if still ringing
             setTimeout(async () => {
                 const [current] = await db.select().from(callSessions).where(eq(callSessions.id, session.id));
                 if (current?.status === 'ringing') {

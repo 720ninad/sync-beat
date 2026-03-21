@@ -5,9 +5,9 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Colors, CommonStyles } from '../../constants/Theme';
-import { getFriends, pingPresence, getFriendRequests } from '../../src/lib/friends';
+import { getFriends, getFriendRequests } from '../../src/lib/friends';
 import { getMe } from '../../src/lib/auth';
-import { connectSocket, getSocket, pingSocket } from '../../src/lib/socket';
+import { getSocket } from '../../src/lib/socket';
 import { initiateCall } from '../../src/lib/call';
 
 function PulseDot() {
@@ -62,17 +62,17 @@ export default function HomeScreen() {
         }
     };
 
-    // Ping presence every 30 seconds
-    useEffect(() => {
-        // Connect socket and ping presence
-        const initSocket = async () => {
-            await connectSocket();
-            pingSocket();
-
+    // Bind socket presence listeners — re-run on every focus so they're
+    // always fresh after returning from a call screen
+    useFocusEffect(
+        useCallback(() => {
             const socket = getSocket();
             if (!socket) return;
 
-            // Real-time friend status updates
+            // Remove stale listeners before re-adding (prevents duplicates)
+            socket.off('friend:online');
+            socket.off('friend:offline');
+
             socket.on('friend:online', ({ userId }: { userId: string }) => {
                 setFriends(prev => prev.map(f =>
                     f.id === userId ? { ...f, isOnline: true } : f
@@ -84,26 +84,15 @@ export default function HomeScreen() {
                     f.id === userId ? { ...f, isOnline: false, lastSeenAt } : f
                 ));
             });
-        };
 
-        initSocket();
-
-        // Ping every 30 seconds to keep presence alive
-        const interval = setInterval(pingSocket, 30000);
-
-        return () => {
-            clearInterval(interval);
-            const socket = getSocket();
-            socket?.off('friend:online');
-            socket?.off('friend:offline');
-        };
-    }, []);
-
-    // Reload on screen focus
-    useFocusEffect(
-        useCallback(() => {
+            // Reload friend list (picks up fresh Redis presence state)
             setLoading(true);
             loadData();
+
+            return () => {
+                socket.off('friend:online');
+                socket.off('friend:offline');
+            };
         }, [])
     );
 
