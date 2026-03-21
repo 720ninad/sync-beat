@@ -29,8 +29,14 @@ export async function connectSocket(): Promise<Socket> {
         console.log('🔴 Socket disconnected:', reason);
     });
 
-    socket.on('connect_error', (err) => {
+    socket.on('connect_error', async (err) => {
         console.error('❌ Socket error:', err.message);
+        if (err.message === 'Invalid token' || err.message === 'No token provided') {
+            const { removeToken } = await import('./storage');
+            await removeToken();
+            socket?.disconnect();
+            socket = null;
+        }
     });
 
     return socket;

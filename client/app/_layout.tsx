@@ -22,8 +22,11 @@ export default function RootLayout() {
                     await connectSocket();
                     registerCallListeners();
                 }
-            } catch (err) {
+            } catch (err: any) {
                 console.error('Socket init error:', err);
+                if (err.message === 'Invalid token' || err.message === 'No token found') {
+                    router.replace('/login');
+                }
             }
         };
         init();
