@@ -18,16 +18,15 @@ export default function RootLayout() {
             try {
                 const token = await getToken();
                 if (token) {
-                    // Re-register call listeners on every reconnect (handles background/foreground)
+                    // setOnReconnect fires on EVERY connect event — including the first one.
+                    // So we register listeners here only, not eagerly after connectSocket().
                     setOnReconnect(() => {
                         unregisterCallListeners();
                         registerCallListeners();
-                        // Re-ping presence immediately after reconnect
                         pingSocket();
                     });
+                    // Just initiate the connection — listeners bind when 'connect' fires above
                     await connectSocket();
-                    registerCallListeners();
-                    pingSocket();
                 }
             } catch (err: any) {
                 console.error('Socket init error:', err);
