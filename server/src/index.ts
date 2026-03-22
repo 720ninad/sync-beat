@@ -15,6 +15,7 @@ import tracksRoutes from './routes/tracks.routes';
 import { registerSocketHandlers } from './socket/socket.handler';
 import historyRoutes from './routes/history.routes';
 import notificationsRoutes from './routes/notifications.routes';
+import turnRoutes from './routes/turn.routes';
 import { authLimiter, generalLimiter, otpLimiter, uploadLimiter } from './middleware/rateLimit';
 
 
@@ -168,6 +169,7 @@ app.use('/api/friends', friendsRoutes);
 app.use('/api/tracks', tracksRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/turn', turnRoutes);
 
 httpServer.listen(PORT, () => {
     console.log(`✅ Server running on http://localhost:${PORT}`);

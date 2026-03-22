@@ -4,23 +4,25 @@ const STUN_SERVERS = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        {
-            urls: 'turn:relay.metered.ca:80',
-            username: '720ninad@gmail.com',
-            credential: 'Ninad@2001',
-        },
-        {
-            urls: 'turn:relay.metered.ca:443',
-            username: '720ninad@gmail.com',
-            credential: 'Ninad@2001',
-        },
-        {
-            urls: 'turn:relay.metered.ca:443?transport=tcp',
-            username: '720ninad@gmail.com',
-            credential: 'Ninad@2001',
-        },
+        { urls: 'stun:stun2.l.google.com:19302' },
     ],
 };
+
+// Fetched dynamically from server before each call
+let dynamicIceServers: RTCIceServer[] | null = null;
+
+export async function fetchIceServers(): Promise<RTCIceServer[]> {
+    if (dynamicIceServers) return dynamicIceServers;
+    try {
+        const { api } = await import('./api');
+        const { data } = await api.get('/turn-credentials');
+        dynamicIceServers = data.iceServers;
+        return dynamicIceServers!;
+    } catch (err) {
+        console.warn('⚠️ Failed to fetch ICE servers, using STUN only:', err);
+        return STUN_SERVERS.iceServers;
+    }
+}
 
 let peerConnection: RTCPeerConnection | null = null;
 let localStream: MediaStream | null = null;
@@ -71,11 +73,12 @@ export function createPeerConnection(
     callId: string,
     targetId: string,
     onRemoteStream: (stream: MediaStream) => void,
+    iceServers?: RTCIceServer[],
 ): RTCPeerConnection {
     const socket = getSocket();
     if (!socket) throw new Error('Socket not connected');
 
-    peerConnection = new RTCPeerConnection(STUN_SERVERS);
+    peerConnection = new RTCPeerConnection({ iceServers: iceServers ?? [{ urls: 'stun:stun.l.google.com:19302' }] });
 
     // Add local tracks
     localStream?.getTracks().forEach(track => {
@@ -116,8 +119,9 @@ export async function createOffer(
     const socket = getSocket();
     if (!socket) return;
 
+    const iceServers = await fetchIceServers();
     await getLocalStream();
-    const pc = createPeerConnection(callId, targetId, onRemoteStream);
+    const pc = createPeerConnection(callId, targetId, onRemoteStream, iceServers);
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -136,8 +140,9 @@ export async function handleOffer(
     const socket = getSocket();
     if (!socket) return;
 
+    const iceServers = await fetchIceServers();
     await getLocalStream();
-    const pc = createPeerConnection(callId, callerId, onRemoteStream);
+    const pc = createPeerConnection(callId, callerId, onRemoteStream, iceServers);
 
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
     const answer = await pc.createAnswer();
@@ -185,5 +190,6 @@ export function cleanupWebRTC() {
     localStream = null;
     peerConnection = null;
     isMuted = false;
+    dynamicIceServers = null;
     console.log('🧹 WebRTC cleaned up');
 }
