@@ -180,7 +180,7 @@ export default function PickSongScreen() {
                 trackId: track.id,
             });
 
-            await engine.emitStart();
+            const scheduledServerTime = await engine.emitStart();
 
             router.push({
                 pathname: '/call/player',
@@ -193,6 +193,7 @@ export default function PickSongScreen() {
                     trackEmoji: '🎵',
                     trackUrl: audioUrl,
                     durationMs: String((track.duration || 0) * 1000),
+                    serverTime: String(scheduledServerTime),
                     pickerUserId: myUserId || myUserRef.current,
                 },
             });

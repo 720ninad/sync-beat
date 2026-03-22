@@ -217,13 +217,20 @@ export default function PlayerScreen() {
             // ── Initial playback ──
             if (!initDone.current) {
                 initDone.current = true;
-                await engine.measureClockOffset();
+
+                // Only measure clock offset if engine doesn't have one yet
+                // (pick-song already measured it before emitStart)
+                if (engine.clockOffset === 0) {
+                    await engine.measureClockOffset();
+                }
 
                 const iAmThePicker = initPickerUserId === myId;
 
                 if (iAmThePicker && initTrackUrl) {
-                    console.log('▶️ I am picker, playing from start');
-                    await engine.playFromStart();
+                    // st is the scheduled server time returned by emitStart()
+                    // Both picker and receiver start at the same scheduled moment
+                    console.log(`▶️ I am picker, playing at scheduled time st=${st}`);
+                    await engine.playFromStart(st || undefined);
                 } else if (initTrackUrl && st) {
                     console.log('📥 Other picked, syncing...');
                     await engine.receiveStart(

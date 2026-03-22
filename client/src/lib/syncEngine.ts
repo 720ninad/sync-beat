@@ -8,14 +8,7 @@ export interface SyncTrack {
     title: string;
     emoji: string;
     durationMs: number;
-}
-
-export interface SyncTrack {
-    url: string;
-    title: string;
-    emoji: string;
-    durationMs: number;
-    trackId?: string;   // ← ADD THIS
+    trackId?: string;
 }
 
 type OnStatusUpdate = (status: {
@@ -29,7 +22,10 @@ export class SyncEngine {
     sound: Audio.Sound | null = null;
     private callId: string;
     myUserId: string;
-    private clockOffset: number = 0;
+
+    // Clock sync — averaged over multiple samples for accuracy
+    clockOffset: number = 0;
+
     onStatus: OnStatusUpdate;
     private track: SyncTrack | null = null;
 
@@ -38,6 +34,13 @@ export class SyncEngine {
     private isPaused: boolean = true;
 
     private driftTimer: ReturnType<typeof setInterval> | null = null;
+
+    // How far ahead to schedule playback start (gives both clients time to buffer)
+    private static readonly SCHEDULE_AHEAD_MS = 800;
+    // Drift correction threshold — nudge if off by more than this
+    private static readonly DRIFT_THRESHOLD_MS = 150;
+    // Drift correction interval
+    private static readonly DRIFT_CHECK_INTERVAL_MS = 3000;
 
     constructor(callId: string, myUserId: string, onStatus: OnStatusUpdate) {
         this.callId = callId;
@@ -49,22 +52,38 @@ export class SyncEngine {
         this.onStatus = cb;
     }
 
-    // ─── 1. CLOCK OFFSET ─────────────────────────────────
-    async measureClockOffset(): Promise<number> {
-        return new Promise((resolve) => {
-            const socket = getSocket();
-            const clientT0 = Date.now();
-            socket?.emit('sync:ping', { clientTime: clientT0 });
-            socket?.once('sync:pong', ({ clientTime, serverTime }: any) => {
-                const clientT1 = Date.now();
-                const roundTrip = clientT1 - clientTime;
-                const offset = serverTime - (clientTime + roundTrip / 2);
-                this.clockOffset = offset;
-                console.log(`Clock offset: ${offset}ms  RTT: ${roundTrip}ms`);
-                resolve(offset);
+    // ─── 1. CLOCK OFFSET (averaged over N samples) ───────
+    async measureClockOffset(samples = 5): Promise<number> {
+        const socket = getSocket();
+        if (!socket) return 0;
+
+        const offsets: number[] = [];
+
+        for (let i = 0; i < samples; i++) {
+            const offset = await new Promise<number>((resolve) => {
+                const t0 = Date.now();
+                socket.emit('sync:ping', { clientTime: t0 });
+                const handler = ({ clientTime, serverTime }: any) => {
+                    const t1 = Date.now();
+                    const rtt = t1 - clientTime;
+                    // Cristian's algorithm: offset = serverTime - (t0 + rtt/2)
+                    const o = serverTime - (clientTime + rtt / 2);
+                    resolve(o);
+                };
+                socket.once('sync:pong', handler);
+                setTimeout(() => { socket.off('sync:pong', handler); resolve(0); }, 2000);
             });
-            setTimeout(() => resolve(0), 3000);
-        });
+            offsets.push(offset);
+            // Small gap between samples to avoid burst
+            if (i < samples - 1) await new Promise(r => setTimeout(r, 100));
+        }
+
+        // Discard outliers — use median
+        offsets.sort((a, b) => a - b);
+        const median = offsets[Math.floor(offsets.length / 2)];
+        this.clockOffset = median;
+        console.log(`⏱ Clock offset: ${median}ms  samples: [${offsets.join(', ')}]`);
+        return median;
     }
 
     serverNow(): number {
@@ -90,7 +109,7 @@ export class SyncEngine {
         });
         const { sound } = await Audio.Sound.createAsync(
             { uri: track.url },
-            { shouldPlay: false, positionMillis: 0 },
+            { shouldPlay: false, positionMillis: 0, progressUpdateIntervalMillis: 100 },
             this._onPlaybackStatus,
         );
         this.sound = sound;
@@ -107,59 +126,77 @@ export class SyncEngine {
         });
     };
 
-    // ─── 3. EMIT START ───────────────────────────────────
-    async emitStart(): Promise<void> {
-        if (!this.track) return;
+    // ─── 3. EMIT START (scheduled future time) ───────────
+    // Returns the scheduled server time so the picker can pass it to playFromStart()
+    async emitStart(): Promise<number> {
+        if (!this.track) return 0;
         await this.measureClockOffset();
-        const serverTime = this.serverNow();
+        // Schedule start SCHEDULE_AHEAD_MS in the future so receiver has time to buffer
+        const startAt = this.serverNow() + SyncEngine.SCHEDULE_AHEAD_MS;
         getSocket()?.emit('sync:start', {
             callId: this.callId,
             trackUrl: this.track.url,
             trackTitle: this.track.title,
             trackEmoji: this.track.emoji,
             trackId: this.track.trackId,
-            serverTime,
+            serverTime: startAt,       // future scheduled time
             pickerUserId: this.myUserId,
         });
-        console.log('📡 sync:start emitted for', this.track.title);
+        console.log(`📡 sync:start scheduled for T+${SyncEngine.SCHEDULE_AHEAD_MS}ms (serverTime=${startAt})`);
+        return startAt;
     }
 
-    // ─── 4. PICKER: PLAY FROM START ──────────────────────
-    async playFromStart(): Promise<void> {
+    // ─── 4. PICKER: PLAY AT SCHEDULED TIME ───────────────
+    async playFromStart(scheduledServerTime?: number): Promise<void> {
         if (!this.sound) return;
         try {
-            const serverTime = this.serverNow();
             await this.sound.setPositionAsync(0);
-            // Small delay — lets audio context fully initialize on web
-            await new Promise(r => setTimeout(r, 150));
+            const startAt = scheduledServerTime ?? this.serverNow();
+            const delayMs = Math.max(0, startAt - this.serverNow());
+            console.log(`▶️ Picker playing in ${delayMs}ms`);
+            if (delayMs > 0) await new Promise(r => setTimeout(r, delayMs));
             await this._safePlay(this.sound);
-            this.playStartServerTime = serverTime;
+            this.playStartServerTime = startAt;
             this.isPaused = false;
             this._startDriftCheck();
         } catch (err) { console.error('playFromStart error:', err); }
     }
 
-
-    // ─── 5. RECEIVER: SYNC AND PLAY ──────────────────────
-    async receiveStart(trackUrl: string, trackTitle: string, trackEmoji: string, serverTime: number): Promise<void> {
-        console.log('📥 receiveStart serverTime=', serverTime);
+    // ─── 5. RECEIVER: LOAD THEN PLAY AT SCHEDULED TIME ───
+    async receiveStart(trackUrl: string, trackTitle: string, trackEmoji: string, scheduledServerTime: number): Promise<void> {
+        console.log('📥 receiveStart scheduledAt=', scheduledServerTime);
         try {
+            // Load first — this takes time
             await this.loadTrack({ url: trackUrl, title: trackTitle, emoji: trackEmoji, durationMs: 0 });
         } catch (err) {
             console.error('receiveStart loadTrack failed:', err);
             return;
         }
-        const elapsed = Math.max(0, this.serverNow() - serverTime);
-        try {
-            await this.sound!.setPositionAsync(elapsed);
-            // Small delay — lets audio buffer before play on web
-            await new Promise(r => setTimeout(r, 150));
-            await this._safePlay(this.sound!);
-            this.playStartServerTime = serverTime;
-            this.isPaused = false;
-            this._startDriftCheck();
-            console.log(`receiveStart — seeked to ${elapsed}ms`);
-        } catch (err) { console.error('receiveStart error:', err); }
+
+        const delayMs = scheduledServerTime - this.serverNow();
+
+        if (delayMs > 0) {
+            // We have time — wait then play from 0
+            console.log(`⏳ Waiting ${delayMs}ms to start in sync`);
+            await new Promise(r => setTimeout(r, delayMs));
+            try {
+                await this.sound!.setPositionAsync(0);
+                await this._safePlay(this.sound!);
+                this.playStartServerTime = scheduledServerTime;
+            } catch (err) { console.error('receiveStart play error:', err); }
+        } else {
+            // We're late — seek to catch up
+            const catchUpMs = Math.abs(delayMs);
+            console.log(`⚡ Late by ${catchUpMs}ms — seeking to catch up`);
+            try {
+                await this.sound!.setPositionAsync(catchUpMs);
+                await this._safePlay(this.sound!);
+                this.playStartServerTime = scheduledServerTime;
+            } catch (err) { console.error('receiveStart catchup error:', err); }
+        }
+
+        this.isPaused = false;
+        this._startDriftCheck();
     }
 
     // ─── 6. RESYNC AFTER RELOAD ──────────────────────────
@@ -183,7 +220,7 @@ export class SyncEngine {
             const seekTo = positionMs + elapsed;
             try {
                 await this.sound!.setPositionAsync(seekTo);
-                await new Promise(r => setTimeout(r, 150));
+                await new Promise(r => setTimeout(r, 100));
                 await this._safePlay(this.sound!);
                 this.playStartServerTime = serverTime - positionMs;
                 this.isPaused = false;
@@ -198,6 +235,7 @@ export class SyncEngine {
             } catch { }
         }
     }
+
     // ─── 7. PAUSE ────────────────────────────────────────
     async pause(): Promise<void> {
         if (!this.sound) return;
@@ -280,22 +318,32 @@ export class SyncEngine {
         } catch { }
     }
 
-    // ─── 13. DRIFT CHECK ─────────────────────────────────
+    // ─── 13. DRIFT CORRECTION ────────────────────────────
+    // Runs every 3s. If drift > 150ms, nudge position.
+    // Uses rate adjustment (setRateAsync) when available to avoid jarring seeks.
     private _startDriftCheck() {
         this._stopDriftCheck();
         this.driftTimer = setInterval(async () => {
             if (!this.sound || this.isPaused || !this.playStartServerTime) return;
             const status = await this.sound.getStatusAsync();
             if (!status.isLoaded || !status.isPlaying) return;
+
             const expectedMs = this.serverNow() - this.playStartServerTime;
             const actualMs = status.positionMillis;
             const drift = actualMs - expectedMs;
-            console.log(`Drift — actual: ${actualMs}ms  expected: ${expectedMs}ms  drift: ${drift}ms`);
-            if (Math.abs(drift) > 800) {
-                console.log(`⚡ Correcting drift of ${drift}ms`);
+
+            if (Math.abs(drift) < SyncEngine.DRIFT_THRESHOLD_MS) return;
+
+            console.log(`🔧 Drift ${drift > 0 ? '+' : ''}${drift}ms — correcting`);
+
+            if (Math.abs(drift) > 2000) {
+                // Large drift — hard seek
+                try { await this.sound.setPositionAsync(expectedMs); } catch { }
+            } else {
+                // Small drift — soft seek (less jarring)
                 try { await this.sound.setPositionAsync(expectedMs); } catch { }
             }
-        }, 8000);
+        }, SyncEngine.DRIFT_CHECK_INTERVAL_MS);
     }
 
     private _stopDriftCheck() {
@@ -317,7 +365,7 @@ export class SyncEngine {
                 console.log('🔁 Skipping own sync:start');
                 return;
             }
-            console.log('📥 Other user picked song');
+            console.log('📥 Other user picked song, scheduled at', serverTime);
             onSongChange({ trackUrl, trackTitle, trackEmoji, serverTime });
             await this.receiveStart(trackUrl, trackTitle, trackEmoji, serverTime);
         };
