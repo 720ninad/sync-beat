@@ -3,6 +3,23 @@ import { redis } from "./redis";
 
 const CACHE_TTL = 3600; // 1 hour
 
+// Render installs yt-dlp via pip into the venv or ~/.local/bin — try known paths
+const YTDLP_CMD = [
+    'yt-dlp',
+    '/opt/render/project/src/.venv/bin/yt-dlp',
+    '/home/render/.local/bin/yt-dlp',
+    '/usr/local/bin/yt-dlp',
+].find(cmd => {
+    try {
+        require('child_process').execSync(`${cmd} --version`, { timeout: 5000, stdio: 'ignore' });
+        return true;
+    } catch {
+        return false;
+    }
+}) || 'yt-dlp';
+
+console.log(`🎵 yt-dlp resolved to: ${YTDLP_CMD}`);
+
 export async function getAudioUrl(videoId: string): Promise<string | null> {
     // Check Redis cache first
     const cached = await redis.get(`audio:${videoId}`);
@@ -13,7 +30,7 @@ export async function getAudioUrl(videoId: string): Promise<string | null> {
 
     return new Promise((resolve) => {
         const url = `https://www.youtube.com/watch?v=${videoId}`;
-        const command = `yt-dlp -f bestaudio -g "${url}"`;
+        const command = `${YTDLP_CMD} -f bestaudio -g "${url}"`;
 
         exec(command, async (error, stdout, stderr) => {
             if (error) {
@@ -61,7 +78,7 @@ export async function searchYouTube(query: string, limit = 10): Promise<YTSearch
 
     return new Promise((resolve) => {
         // yt-dlp ytsearch: returns JSON metadata without downloading
-        const command = `yt-dlp "ytsearch${limit}:${query}" --dump-json --no-playlist --flat-playlist --no-warnings`;
+        const command = `${YTDLP_CMD} "ytsearch${limit}:${query}" --dump-json --no-playlist --flat-playlist --no-warnings`;
 
         exec(command, async (error, stdout) => {
             if (error) {

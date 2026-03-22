@@ -124,24 +124,27 @@ app.get('/health', async (req, res) => {
 // Debug endpoint — check if yt-dlp is installed and working
 app.get('/health/ytdlp', (req, res) => {
     const { exec } = require('child_process');
-    exec('yt-dlp --version', { timeout: 10000 }, (err: any, stdout: string, stderr: string) => {
-        if (err) {
-            res.status(500).json({
-                installed: false,
-                error: err.message,
-                stderr,
-                path: process.env.PATH,
-            });
-            return;
-        }
-        // Also check ffmpeg
-        exec('ffmpeg -version', { timeout: 10000 }, (ffErr: any, ffStdout: string) => {
-            res.json({
-                installed: true,
-                ytdlpVersion: stdout.trim(),
-                ffmpeg: ffErr ? 'not found' : ffStdout.split('\n')[0],
-                path: process.env.PATH,
-            });
+    const candidates = [
+        'yt-dlp',
+        '/opt/render/project/src/.venv/bin/yt-dlp',
+        '/home/render/.local/bin/yt-dlp',
+        '/usr/local/bin/yt-dlp',
+    ];
+    const results: Record<string, string> = {};
+    let checked = 0;
+    candidates.forEach(cmd => {
+        exec(`${cmd} --version`, { timeout: 10000 }, (err: any, stdout: string) => {
+            results[cmd] = err ? 'not found' : stdout.trim();
+            checked++;
+            if (checked === candidates.length) {
+                exec('ffmpeg -version', { timeout: 10000 }, (ffErr: any, ffStdout: string) => {
+                    res.json({
+                        candidates: results,
+                        ffmpeg: ffErr ? 'not found' : ffStdout.split('\n')[0],
+                        path: process.env.PATH,
+                    });
+                });
+            }
         });
     });
 });
