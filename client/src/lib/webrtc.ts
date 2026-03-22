@@ -148,6 +148,12 @@ export async function handleOffer(
     const socket = getSocket();
     if (!socket) return;
 
+    // If already have a connection in progress, ignore duplicate offers
+    if (peerConnection && peerConnection.signalingState !== 'stable') {
+        console.warn('⚠️ Ignoring duplicate offer — signaling state:', peerConnection.signalingState);
+        return;
+    }
+
     const iceServers = await fetchIceServers();
     await getLocalStream();
     const pc = createPeerConnection(callId, callerId, onRemoteStream, iceServers);
@@ -163,6 +169,11 @@ export async function handleOffer(
 // ─── HANDLE ANSWER ───────────────────────────────────
 export async function handleAnswer(answer: RTCSessionDescriptionInit) {
     if (!peerConnection) return;
+    // Only set remote description if we're in the right state
+    if (peerConnection.signalingState !== 'have-local-offer') {
+        console.warn('⚠️ Ignoring answer — wrong signaling state:', peerConnection.signalingState);
+        return;
+    }
     await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
     console.log('✅ Remote description set');
 }
@@ -170,6 +181,8 @@ export async function handleAnswer(answer: RTCSessionDescriptionInit) {
 // ─── HANDLE ICE CANDIDATE ────────────────────────────
 export async function handleIceCandidate(candidate: RTCIceCandidateInit) {
     if (!peerConnection) return;
+    // Drop candidates if connection is already closed or failed
+    if (peerConnection.connectionState === 'closed' || peerConnection.connectionState === 'failed') return;
     try {
         await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
     } catch (err) {

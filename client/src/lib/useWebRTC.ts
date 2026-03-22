@@ -7,7 +7,6 @@ import {
     handleIceCandidate,
     toggleMute,
     cleanupWebRTC,
-    getPeerConnectionState,
 } from './webrtc';
 
 interface UseWebRTCProps {
@@ -101,28 +100,9 @@ export function useWebRTC({ callId, targetId, isCaller }: UseWebRTCProps) {
                     setTimeout(async () => {
                         await createOffer(callId, targetId, onRemoteStream);
                     }, 2000);
-
-                    // Receiver may have missed the offer — resend if requested
-                    socket.on('webrtc:resend-offer', async ({ requesterId }: any) => {
-                        const state = getPeerConnectionState();
-                        if (state === 'connected') return;
-                        console.log('🔁 Receiver requested offer re-send, resending...');
-                        // Re-emit the existing local description instead of creating new PC
-                        const { getLocalDescription } = await import('./webrtc');
-                        const localDesc = getLocalDescription();
-                        if (localDesc) {
-                            socket.emit('webrtc:offer', { callId, offer: localDesc, targetId: requesterId });
-                        } else {
-                            await createOffer(callId, requesterId, onRemoteStream);
-                        }
-                    });
                 } else {
-                    // Receiver: ask caller to re-send offer in case we missed it
-                    setTimeout(() => {
-                        const s = getSocket();
-                        s?.emit('webrtc:request-offer', { callId, targetId });
-                        console.log('📨 Requested offer from caller');
-                    }, 500);
+                    // No action needed — offer will arrive after caller's 2s delay
+                    console.log('📡 Receiver ready, waiting for offer...');
                 }
 
                 socket.on('webrtc:offer', async ({ offer, callerId }: any) => {
@@ -159,7 +139,6 @@ export function useWebRTC({ callId, targetId, isCaller }: UseWebRTCProps) {
                 socket.off('webrtc:offer');
                 socket.off('webrtc:answer');
                 socket.off('webrtc:ice-candidate');
-                socket.off('webrtc:resend-offer');
                 cleanupWebRTC();
                 if (globalRemoteAudio) {
                     globalRemoteAudio.srcObject = null;
