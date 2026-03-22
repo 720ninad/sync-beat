@@ -63,22 +63,35 @@ export async function getAudioUrl(videoId: string): Promise<string | null> {
     return new Promise((resolve) => {
         const url = `https://www.youtube.com/watch?v=${videoId}`;
         const cookiesArg = getCookiesArg();
-        const command = `${YTDLP_CMD} -f bestaudio -g ${cookiesArg} --extractor-args "youtube:player_client=web" "${url}"`;
 
-        exec(command, { timeout: 30000 }, async (error, stdout, stderr) => {
-            if (error) {
-                console.error("yt-dlp error:", error.killed ? "Process timed out" : error.message);
+        // Try clients in order — android_vr/ios don't need JS runtime or signature solving
+        const clientsToTry = ['android_vr', 'ios', 'web'];
+        let clientIndex = 0;
+
+        const tryNext = () => {
+            if (clientIndex >= clientsToTry.length) {
+                console.error("yt-dlp: all clients failed for", videoId);
                 return resolve(null);
             }
-            if (stderr) console.warn("yt-dlp stderr:", stderr);
+            const client = clientsToTry[clientIndex++];
+            const command = `${YTDLP_CMD} -f bestaudio/best -g ${cookiesArg} --extractor-args "youtube:player_client=${client}" --no-warnings "${url}"`;
 
-            const audioUrl = stdout.trim().split("\n")[0] || null;
-            if (audioUrl) {
-                await redis.setex(`audio:${videoId}`, CACHE_TTL, audioUrl);
-                console.log("🎧 Extracted & cached audio URL for:", videoId);
-            }
-            resolve(audioUrl);
-        });
+            exec(command, { timeout: 30000 }, async (error, stdout) => {
+                if (error || !stdout.trim()) {
+                    console.warn(`⚠️ yt-dlp client=${client} failed, trying next...`);
+                    tryNext();
+                    return;
+                }
+                const audioUrl = stdout.trim().split("\n")[0];
+                if (audioUrl) {
+                    await redis.setex(`audio:${videoId}`, CACHE_TTL, audioUrl);
+                    console.log(`🎧 Cached audio (client=${client}) for:`, videoId);
+                }
+                resolve(audioUrl);
+            });
+        };
+
+        tryNext();
     });
 }
 
