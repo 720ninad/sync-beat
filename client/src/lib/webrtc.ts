@@ -26,6 +26,27 @@ export async function fetchIceServers(): Promise<RTCIceServer[]> {
     }
 }
 
+// ─── WAIT FOR ICE GATHERING TO COMPLETE ─────────────
+// Waits until all candidates (including TURN relay) are gathered before sending SDP.
+// This ensures TURN candidates are included in the offer/answer.
+function waitForIceGathering(pc: RTCPeerConnection, timeoutMs = 6000): Promise<void> {
+    return new Promise((resolve) => {
+        if (pc.iceGatheringState === 'complete') { resolve(); return; }
+        const timeout = setTimeout(() => {
+            console.warn('⚠️ ICE gathering timed out, proceeding with available candidates');
+            resolve();
+        }, timeoutMs);
+        const onStateChange = () => {
+            if (pc.iceGatheringState === 'complete') {
+                clearTimeout(timeout);
+                pc.removeEventListener('icegatheringstatechange', onStateChange);
+                resolve();
+            }
+        };
+        pc.addEventListener('icegatheringstatechange', onStateChange);
+    });
+}
+
 // ─── MICROPHONE ──────────────────────────────────────
 export async function requestMicrophonePermission(): Promise<boolean> {
     if (permissionRequested && localStream) return true;
@@ -111,9 +132,12 @@ export async function createOffer(
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    // Send offer immediately — ICE candidates trickle via onicecandidate
+    // Wait for all ICE candidates (including TURN) before sending
+    await waitForIceGathering(pc);
+
+    const candidateCount = pc.localDescription?.sdp?.match(/a=candidate/g)?.length ?? 0;
+    console.log(`📤 Offer sent with ${candidateCount} candidates`);
     socket.emit('webrtc:offer', { callId, offer: pc.localDescription, targetId });
-    console.log('📤 Offer sent to', targetId);
 }
 
 // ─── RECEIVER: HANDLE OFFER + CREATE ANSWER ──────────
@@ -139,9 +163,12 @@ export async function handleOffer(
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
-    // Send answer immediately — ICE candidates trickle via onicecandidate
+    // Wait for all ICE candidates (including TURN) before sending
+    await waitForIceGathering(pc);
+
+    const candidateCount = pc.localDescription?.sdp?.match(/a=candidate/g)?.length ?? 0;
+    console.log(`📤 Answer sent with ${candidateCount} candidates`);
     socket.emit('webrtc:answer', { callId, answer: pc.localDescription, targetId: callerId });
-    console.log('📤 Answer sent to', callerId);
 }
 
 // ─── HANDLE ANSWER ───────────────────────────────────
