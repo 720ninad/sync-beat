@@ -67,15 +67,26 @@ export { getSocket };
 // ─── REGISTER LISTENERS ──────────────────────────────
 export function registerCallListeners() {
     const socket = getSocket();
-    if (!socket) return;
+    if (!socket) {
+        console.warn('⚠️ registerCallListeners — no socket');
+        return;
+    }
+
+    console.log('📡 registerCallListeners — binding on socket', socket.id);
 
     // Receiver: incoming call
     socket.on('call:incoming', ({ callId, callerId, name, username }: any) => {
+        console.log('📞 call:incoming received', { callId, callerId, name, username });
         currentCallId = callId;
-        router.push({
-            pathname: '/call/incoming',
-            params: { callId, callerId, name, username },
-        });
+        try {
+            router.push({
+                pathname: '/call/incoming',
+                params: { callId, callerId, name, username },
+            });
+            console.log('✅ router.push /call/incoming fired');
+        } catch (err) {
+            console.error('❌ router.push failed:', err);
+        }
     });
 
     // Caller: receiver accepted → go to pick song
