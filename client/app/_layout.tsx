@@ -7,8 +7,7 @@ import { connectSocket, getSocket, setOnReconnect, pingSocket } from '../src/lib
 import { registerCallListeners, unregisterCallListeners } from '../src/lib/call';
 import { getCallSession } from '../src/lib/callSession';
 import { toast } from '../src/lib/toast';
-import { registerPushToken, setupNotificationListeners } from '../src/lib/notifications';
-import { useRouter } from 'expo-router';
+import { setupNotificationListeners } from '../src/lib/notifications';
 import { ErrorBoundary } from '../src/components/ErrorBoundary';
 
 export default function RootLayout() {
@@ -50,36 +49,27 @@ export default function RootLayout() {
     // ─── RELOAD RECOVERY ─────────────────────────────────
     useEffect(() => {
         const recoverCall = async () => {
-            if (typeof window === 'undefined') return;
+            // Only recover if there's an active call session saved
+            const session = getCallSession();
+            if (!session) return;
 
             const token = await getToken();
             if (!token) return;
 
-            const session = getCallSession();
-            if (!session) return;
-
             console.log('🔄 Recovering call session after reload:', session);
 
-            // Reconnect socket
-            await connectSocket();
-            registerCallListeners();
-            await registerPushToken();
-
-            // Wait for socket to connect
-            await new Promise(r => setTimeout(r, 1000));
+            // Wait for the socket init from the first useEffect to complete
+            await new Promise(r => setTimeout(r, 1500));
 
             const socket = getSocket();
             if (!socket) return;
 
-            // Listen for peer-rejoined toast
             socket.on('call:peer-rejoined', ({ name }: any) => {
                 toast.info(`${name} reconnected`);
             });
 
-            // Rejoin call room
             socket.emit('call:rejoin', { callId: session.callId });
 
-            // Navigate back to correct screen
             if (session.screen === 'player' && session.trackUrl) {
                 router.replace({
                     pathname: '/call/player',

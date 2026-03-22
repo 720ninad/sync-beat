@@ -67,31 +67,34 @@ export default function HomeScreen() {
     useFocusEffect(
         useCallback(() => {
             const socket = getSocket();
-            if (!socket) return;
 
-            // Remove stale listeners before re-adding (prevents duplicates)
-            socket.off('friend:online');
-            socket.off('friend:offline');
+            if (socket) {
+                socket.off('friend:online');
+                socket.off('friend:offline');
 
-            socket.on('friend:online', ({ userId }: { userId: string }) => {
-                setFriends(prev => prev.map(f =>
-                    f.id === userId ? { ...f, isOnline: true } : f
-                ));
-            });
+                socket.on('friend:online', ({ userId }: { userId: string }) => {
+                    setFriends(prev => prev.map(f =>
+                        f.id === userId ? { ...f, isOnline: true } : f
+                    ));
+                });
 
-            socket.on('friend:offline', ({ userId, lastSeenAt }: { userId: string; lastSeenAt: string }) => {
-                setFriends(prev => prev.map(f =>
-                    f.id === userId ? { ...f, isOnline: false, lastSeenAt } : f
-                ));
-            });
+                socket.on('friend:offline', ({ userId, lastSeenAt }: { userId: string; lastSeenAt: string }) => {
+                    setFriends(prev => prev.map(f =>
+                        f.id === userId ? { ...f, isOnline: false, lastSeenAt } : f
+                    ));
+                });
+            }
 
-            // Reload friend list (picks up fresh Redis presence state)
+            // Always load data regardless of socket state
             setLoading(true);
             loadData();
 
             return () => {
-                socket.off('friend:online');
-                socket.off('friend:offline');
+                const s = getSocket();
+                if (s) {
+                    s.off('friend:online');
+                    s.off('friend:offline');
+                }
             };
         }, [])
     );
