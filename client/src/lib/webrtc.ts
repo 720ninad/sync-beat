@@ -1,68 +1,66 @@
 import { getSocket } from './socket';
 
-const STUN_SERVERS = {
-    iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-    ],
-};
+const STUN_SERVERS: RTCIceServer[] = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+];
 
-// Fetched dynamically from server before each call
 let dynamicIceServers: RTCIceServer[] | null = null;
+let peerConnection: RTCPeerConnection | null = null;
+let localStream: MediaStream | null = null;
+let isMuted = false;
+let permissionRequested = false;
 
+// ─── FETCH TURN CREDENTIALS ──────────────────────────
 export async function fetchIceServers(): Promise<RTCIceServer[]> {
     if (dynamicIceServers) return dynamicIceServers;
     try {
         const { api } = await import('./api');
         const { data } = await api.get('/turn/credentials');
         dynamicIceServers = data.iceServers;
+        console.log('✅ TURN credentials fetched:', dynamicIceServers?.length, 'servers');
         return dynamicIceServers!;
     } catch (err) {
         console.warn('⚠️ Failed to fetch ICE servers, using STUN only:', err);
-        return STUN_SERVERS.iceServers;
+        return STUN_SERVERS;
     }
 }
 
-let peerConnection: RTCPeerConnection | null = null;
-let localStream: MediaStream | null = null;
-let isMuted = false;
-let permissionRequested = false;
+// ─── WAIT FOR ICE GATHERING ──────────────────────────
+function waitForIceGathering(pc: RTCPeerConnection, timeoutMs = 6000): Promise<void> {
+    return new Promise((resolve) => {
+        if (pc.iceGatheringState === 'complete') { resolve(); return; }
+        const timeout = setTimeout(() => {
+            console.warn('⚠️ ICE gathering timed out, proceeding with available candidates');
+            resolve();
+        }, timeoutMs);
+        const check = () => {
+            if (pc.iceGatheringState === 'complete') {
+                clearTimeout(timeout);
+                resolve();
+            }
+        };
+        pc.addEventListener('icegatheringstatechange', check);
+    });
+}
 
-// ─── REQUEST MICROPHONE EARLY ────────────────────────
+// ─── MICROPHONE ──────────────────────────────────────
 export async function requestMicrophonePermission(): Promise<boolean> {
-    if (permissionRequested && localStream) {
-        console.log('🎤 Microphone already granted');
-        return true;
-    }
-
+    if (permissionRequested && localStream) return true;
     try {
-        console.log('🎤 Requesting microphone permission...');
         await getLocalStream();
         permissionRequested = true;
-        console.log('✅ Microphone permission granted');
         return true;
-    } catch (err) {
-        console.error('❌ Microphone permission denied:', err);
+    } catch {
         return false;
     }
 }
 
-// ─── GET MICROPHONE ──────────────────────────────────
 export async function getLocalStream(): Promise<MediaStream> {
-    // Reuse existing stream if available
-    if (localStream && localStream.active) {
-        console.log('♻️ Reusing existing microphone stream');
-        return localStream;
-    }
-
-    console.log('🎤 Getting new microphone stream...');
+    if (localStream && localStream.active) return localStream;
+    console.log('🎤 Getting microphone stream...');
     localStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            sampleRate: 44100,
-        },
+        audio: { echoCancellation: true, noiseSuppression: true },
         video: false,
     });
     return localStream;
@@ -78,28 +76,25 @@ export function createPeerConnection(
     const socket = getSocket();
     if (!socket) throw new Error('Socket not connected');
 
-    peerConnection = new RTCPeerConnection({ iceServers: iceServers ?? [{ urls: 'stun:stun.l.google.com:19302' }] });
+    peerConnection = new RTCPeerConnection({
+        iceServers: iceServers ?? STUN_SERVERS,
+        iceTransportPolicy: 'all',
+    });
 
-    // Add local tracks
     localStream?.getTracks().forEach(track => {
         peerConnection!.addTrack(track, localStream!);
     });
 
-    // Receive remote stream
     peerConnection.ontrack = (event) => {
         if (event.streams?.[0]) {
+            console.log('🔊 Remote stream received, tracks:', event.streams[0].getTracks().length);
             onRemoteStream(event.streams[0]);
         }
     };
 
-    // Send ICE candidates
     peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-            socket.emit('webrtc:ice-candidate', {
-                callId,
-                candidate: event.candidate,
-                targetId,
-            });
+            socket.emit('webrtc:ice-candidate', { callId, candidate: event.candidate, targetId });
         }
     };
 
@@ -134,8 +129,11 @@ export async function createOffer(
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    socket.emit('webrtc:offer', { callId, offer, targetId });
-    console.log('📤 Offer sent to', targetId);
+    // Wait for all ICE candidates before sending — ensures TURN candidates are included
+    await waitForIceGathering(pc);
+
+    socket.emit('webrtc:offer', { callId, offer: pc.localDescription, targetId });
+    console.log('📤 Offer sent with', pc.localDescription?.sdp?.match(/a=candidate/g)?.length ?? 0, 'candidates');
 }
 
 // ─── RECEIVER: HANDLE OFFER + CREATE ANSWER ──────────
@@ -148,9 +146,8 @@ export async function handleOffer(
     const socket = getSocket();
     if (!socket) return;
 
-    // If already have a connection in progress, ignore duplicate offers
     if (peerConnection && peerConnection.signalingState !== 'stable') {
-        console.warn('⚠️ Ignoring duplicate offer — signaling state:', peerConnection.signalingState);
+        console.warn('⚠️ Ignoring duplicate offer — state:', peerConnection.signalingState);
         return;
     }
 
@@ -162,16 +159,18 @@ export async function handleOffer(
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
-    socket.emit('webrtc:answer', { callId, answer, targetId: callerId });
-    console.log('📤 Answer sent to', callerId);
+    // Wait for all ICE candidates before sending answer
+    await waitForIceGathering(pc);
+
+    socket.emit('webrtc:answer', { callId, answer: pc.localDescription, targetId: callerId });
+    console.log('📤 Answer sent with', pc.localDescription?.sdp?.match(/a=candidate/g)?.length ?? 0, 'candidates');
 }
 
 // ─── HANDLE ANSWER ───────────────────────────────────
 export async function handleAnswer(answer: RTCSessionDescriptionInit) {
     if (!peerConnection) return;
-    // Only set remote description if we're in the right state
     if (peerConnection.signalingState !== 'have-local-offer') {
-        console.warn('⚠️ Ignoring answer — wrong signaling state:', peerConnection.signalingState);
+        console.warn('⚠️ Ignoring answer — wrong state:', peerConnection.signalingState);
         return;
     }
     await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
@@ -181,7 +180,6 @@ export async function handleAnswer(answer: RTCSessionDescriptionInit) {
 // ─── HANDLE ICE CANDIDATE ────────────────────────────
 export async function handleIceCandidate(candidate: RTCIceCandidateInit) {
     if (!peerConnection) return;
-    // Drop candidates if connection is already closed or failed
     if (peerConnection.connectionState === 'closed' || peerConnection.connectionState === 'failed') return;
     try {
         await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
@@ -193,27 +191,17 @@ export async function handleIceCandidate(candidate: RTCIceCandidateInit) {
 // ─── MUTE / UNMUTE ───────────────────────────────────
 export function toggleMute(): boolean {
     if (!localStream) return isMuted;
-    localStream.getAudioTracks().forEach(track => {
-        track.enabled = isMuted; // flip
-    });
+    localStream.getAudioTracks().forEach(track => { track.enabled = isMuted; });
     isMuted = !isMuted;
     return isMuted;
 }
 
-export function getMuteState(): boolean {
-    return isMuted;
-}
-
-export function getPeerConnectionState(): string | null {
-    return peerConnection?.connectionState ?? null;
-}
+export function getMuteState(): boolean { return isMuted; }
+export function getPeerConnectionState(): string | null { return peerConnection?.connectionState ?? null; }
 
 export function getLocalDescription(): RTCSessionDescriptionInit | null {
     if (!peerConnection?.localDescription) return null;
-    return {
-        type: peerConnection.localDescription.type,
-        sdp: peerConnection.localDescription.sdp,
-    };
+    return { type: peerConnection.localDescription.type, sdp: peerConnection.localDescription.sdp };
 }
 
 // ─── CLEANUP ─────────────────────────────────────────
