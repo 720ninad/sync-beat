@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { getSocket } from './socket';
 import {
     createOffer,
@@ -7,6 +7,7 @@ import {
     handleIceCandidate,
     toggleMute,
     cleanupWebRTC,
+    getPeerConnectionState,
 } from './webrtc';
 
 interface UseWebRTCProps {
@@ -63,8 +64,23 @@ export function useWebRTC({ callId, targetId, isCaller }: UseWebRTCProps) {
                 if (!globalRemoteAudio) {
                     globalRemoteAudio = new Audio();
                     globalRemoteAudio.autoplay = true;
+                    globalRemoteAudio.muted = false;
+                    // Required for some browsers — must be in the DOM
+                    globalRemoteAudio.setAttribute('playsinline', 'true');
                 }
                 globalRemoteAudio.srcObject = stream;
+                // Play and handle autoplay policy — browsers may block without user gesture
+                globalRemoteAudio.play().catch((err) => {
+                    console.warn('⚠️ Audio autoplay blocked, will retry on user interaction:', err);
+                    // Retry on next user interaction
+                    const retry = () => {
+                        globalRemoteAudio?.play().catch(() => { });
+                        document.removeEventListener('click', retry);
+                        document.removeEventListener('touchstart', retry);
+                    };
+                    document.addEventListener('click', retry, { once: true });
+                    document.addEventListener('touchstart', retry, { once: true });
+                });
                 globalIsConnected = true;
                 notifyListeners();
             }
@@ -73,25 +89,38 @@ export function useWebRTC({ callId, targetId, isCaller }: UseWebRTCProps) {
         const init = async () => {
             try {
                 if (isCaller) {
+                    // Delay to give receiver time to mount and register listeners
                     setTimeout(async () => {
                         await createOffer(callId, targetId, onRemoteStream);
-                    }, 1000);
+                    }, 2000);
+
+                    // Receiver may have missed the offer — resend if requested
+                    socket.on('webrtc:resend-offer', async ({ requesterId }: any) => {
+                        if (getPeerConnectionState() === 'connected') return;
+                        console.log('🔁 Receiver requested offer re-send, resending...');
+                        await createOffer(callId, requesterId, onRemoteStream);
+                    });
+                } else {
+                    // Receiver: ask caller to re-send offer in case we missed it
+                    setTimeout(() => {
+                        const s = getSocket();
+                        s?.emit('webrtc:request-offer', { callId, targetId });
+                        console.log('📨 Requested offer from caller');
+                    }, 500);
                 }
 
                 socket.on('webrtc:offer', async ({ offer, callerId }: any) => {
-                    if (!isCaller) {
-                        console.log('📥 Received offer, sending answer...');
-                        await handleOffer(callId, callerId, offer, onRemoteStream);
-                    }
+                    if (isCaller) return; // caller never handles offers
+                    console.log('📥 Received offer, sending answer...');
+                    await handleOffer(callId, callerId, offer, onRemoteStream);
                 });
 
                 socket.on('webrtc:answer', async ({ answer }: any) => {
-                    if (isCaller) {
-                        console.log('📥 Received answer...');
-                        await handleAnswer(answer);
-                        globalIsConnected = true;
-                        notifyListeners();
-                    }
+                    if (!isCaller) return; // receiver never handles answers
+                    console.log('📥 Received answer...');
+                    await handleAnswer(answer);
+                    globalIsConnected = true;
+                    notifyListeners();
                 });
 
                 socket.on('webrtc:ice-candidate', async ({ candidate }: any) => {
@@ -114,6 +143,7 @@ export function useWebRTC({ callId, targetId, isCaller }: UseWebRTCProps) {
                 socket.off('webrtc:offer');
                 socket.off('webrtc:answer');
                 socket.off('webrtc:ice-candidate');
+                socket.off('webrtc:resend-offer');
                 cleanupWebRTC();
                 if (globalRemoteAudio) {
                     globalRemoteAudio.srcObject = null;

@@ -189,6 +189,12 @@ export function registerCallHandlers(io: Server, socket: Socket) {
         io.to(`user:${targetId}`).emit('webrtc:offer', { callId, offer, callerId: caller.id });
     });
 
+    // Receiver missed the offer — ask caller to re-send
+    socket.on('webrtc:request-offer', ({ callId, targetId }: any) => {
+        console.log(`🔁 ${caller.username} requesting offer re-send from ${targetId}`);
+        io.to(`user:${targetId}`).emit('webrtc:resend-offer', { callId, requesterId: caller.id });
+    });
+
     socket.on('webrtc:answer', ({ callId, answer, targetId }: any) => {
         console.log(`📡 WebRTC answer from ${caller.username} → ${targetId}`);
         io.to(`user:${targetId}`).emit('webrtc:answer', { callId, answer });

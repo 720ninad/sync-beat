@@ -15,7 +15,7 @@ export async function fetchIceServers(): Promise<RTCIceServer[]> {
     if (dynamicIceServers) return dynamicIceServers;
     try {
         const { api } = await import('./api');
-        const { data } = await api.get('/turn-credentials');
+        const { data } = await api.get('/turn/credentials');
         dynamicIceServers = data.iceServers;
         return dynamicIceServers!;
     } catch (err) {
@@ -107,6 +107,14 @@ export function createPeerConnection(
         console.log('🔗 WebRTC state:', peerConnection?.connectionState);
     };
 
+    peerConnection.oniceconnectionstatechange = () => {
+        console.log('🧊 ICE state:', peerConnection?.iceConnectionState);
+    };
+
+    peerConnection.onicegatheringstatechange = () => {
+        console.log('🧊 ICE gathering:', peerConnection?.iceGatheringState);
+    };
+
     return peerConnection;
 }
 
@@ -181,6 +189,10 @@ export function toggleMute(): boolean {
 
 export function getMuteState(): boolean {
     return isMuted;
+}
+
+export function getPeerConnectionState(): string | null {
+    return peerConnection?.connectionState ?? null;
 }
 
 // ─── CLEANUP ─────────────────────────────────────────
