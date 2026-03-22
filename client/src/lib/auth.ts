@@ -1,5 +1,5 @@
 import { api } from './api';
-import { disconnectSocket } from './socket';
+import { connectSocket, disconnectSocket } from './socket';
 import { saveToken, getToken, removeToken } from './storage';
 
 export async function registerUser(data: {
@@ -16,7 +16,7 @@ export async function registerUser(data: {
 export async function loginUser(data: { email: string; password: string }) {
     const res = await api.post('/auth/login', data);
     await saveToken(res.data.token);
-    // Socket will be connected by _layout.tsx when it re-renders on the home route
+    await connectSocket(); // ← connect socket after login
     return res.data;
 }
 
