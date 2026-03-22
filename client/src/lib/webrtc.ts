@@ -195,6 +195,14 @@ export function getPeerConnectionState(): string | null {
     return peerConnection?.connectionState ?? null;
 }
 
+export function getLocalDescription(): RTCSessionDescriptionInit | null {
+    if (!peerConnection?.localDescription) return null;
+    return {
+        type: peerConnection.localDescription.type,
+        sdp: peerConnection.localDescription.sdp,
+    };
+}
+
 // ─── CLEANUP ─────────────────────────────────────────
 export function cleanupWebRTC() {
     localStream?.getTracks().forEach(track => track.stop());

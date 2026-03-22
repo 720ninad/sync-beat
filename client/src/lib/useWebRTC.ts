@@ -59,22 +59,30 @@ export function useWebRTC({ callId, targetId, isCaller }: UseWebRTCProps) {
         console.log(`🎙 useWebRTC init — isCaller: ${isCaller}, targetId: ${targetId}`);
 
         const onRemoteStream = (stream: MediaStream) => {
-            console.log('🔊 Remote stream received');
+            console.log('🔊 Remote stream received, tracks:', stream.getTracks().length);
             if (typeof window !== 'undefined') {
-                if (!globalRemoteAudio) {
-                    globalRemoteAudio = new Audio();
-                    globalRemoteAudio.autoplay = true;
-                    globalRemoteAudio.muted = false;
-                    // Required for some browsers — must be in the DOM
-                    globalRemoteAudio.setAttribute('playsinline', 'true');
+                // Remove old audio element if exists
+                const existing = document.getElementById('syncbeat-remote-audio') as HTMLAudioElement | null;
+                if (existing) {
+                    existing.srcObject = null;
+                    existing.remove();
                 }
-                globalRemoteAudio.srcObject = stream;
-                // Play and handle autoplay policy — browsers may block without user gesture
-                globalRemoteAudio.play().catch((err) => {
+
+                // Create and attach to DOM — required for reliable playback
+                const audio = document.createElement('audio');
+                audio.id = 'syncbeat-remote-audio';
+                audio.autoplay = true;
+                audio.muted = false;
+                audio.setAttribute('playsinline', 'true');
+                audio.style.display = 'none';
+                document.body.appendChild(audio);
+                globalRemoteAudio = audio;
+
+                audio.srcObject = stream;
+                audio.play().catch((err) => {
                     console.warn('⚠️ Audio autoplay blocked, will retry on user interaction:', err);
-                    // Retry on next user interaction
                     const retry = () => {
-                        globalRemoteAudio?.play().catch(() => { });
+                        audio.play().catch(() => { });
                         document.removeEventListener('click', retry);
                         document.removeEventListener('touchstart', retry);
                     };
@@ -96,9 +104,17 @@ export function useWebRTC({ callId, targetId, isCaller }: UseWebRTCProps) {
 
                     // Receiver may have missed the offer — resend if requested
                     socket.on('webrtc:resend-offer', async ({ requesterId }: any) => {
-                        if (getPeerConnectionState() === 'connected') return;
+                        const state = getPeerConnectionState();
+                        if (state === 'connected') return;
                         console.log('🔁 Receiver requested offer re-send, resending...');
-                        await createOffer(callId, requesterId, onRemoteStream);
+                        // Re-emit the existing local description instead of creating new PC
+                        const { getLocalDescription } = await import('./webrtc');
+                        const localDesc = getLocalDescription();
+                        if (localDesc) {
+                            socket.emit('webrtc:offer', { callId, offer: localDesc, targetId: requesterId });
+                        } else {
+                            await createOffer(callId, requesterId, onRemoteStream);
+                        }
                     });
                 } else {
                     // Receiver: ask caller to re-send offer in case we missed it
@@ -147,6 +163,7 @@ export function useWebRTC({ callId, targetId, isCaller }: UseWebRTCProps) {
                 cleanupWebRTC();
                 if (globalRemoteAudio) {
                     globalRemoteAudio.srcObject = null;
+                    globalRemoteAudio.remove();
                     globalRemoteAudio = null;
                 }
                 globalInitialized = false;
