@@ -122,14 +122,27 @@ app.get('/health', async (req, res) => {
 });
 
 // Debug endpoint — check if yt-dlp is installed and working
-app.get('/health/ytdlp', (req, res) => {
+app.get('/health/ytdlp', (req: any, res: any) => {
     const { exec } = require('child_process');
+    const nodePath = require('path');
+    const fs = require('fs');
     const candidates = [
         'yt-dlp',
-        '/opt/render/project/src/.venv/bin/yt-dlp',
+        '/opt/render/project/src/server/yt-dlp',
+        nodePath.join(__dirname, '../../yt-dlp'),
+        nodePath.join(__dirname, '../yt-dlp'),
+        nodePath.join(process.cwd(), 'yt-dlp'),
         '/home/render/.local/bin/yt-dlp',
         '/usr/local/bin/yt-dlp',
     ];
+    const fsInfo: any = {
+        __dirname,
+        cwd: process.cwd(),
+        fileExists: {} as Record<string, boolean>,
+    };
+    candidates.forEach(c => {
+        try { fsInfo.fileExists[c] = fs.existsSync(c); } catch { fsInfo.fileExists[c] = false; }
+    });
     const results: Record<string, string> = {};
     let checked = 0;
     candidates.forEach(cmd => {
@@ -141,7 +154,7 @@ app.get('/health/ytdlp', (req, res) => {
                     res.json({
                         candidates: results,
                         ffmpeg: ffErr ? 'not found' : ffStdout.split('\n')[0],
-                        path: process.env.PATH,
+                        fsInfo,
                     });
                 });
             }
