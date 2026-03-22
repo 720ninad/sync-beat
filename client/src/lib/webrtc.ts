@@ -26,24 +26,6 @@ export async function fetchIceServers(): Promise<RTCIceServer[]> {
     }
 }
 
-// ─── WAIT FOR ICE GATHERING ──────────────────────────
-function waitForIceGathering(pc: RTCPeerConnection, timeoutMs = 6000): Promise<void> {
-    return new Promise((resolve) => {
-        if (pc.iceGatheringState === 'complete') { resolve(); return; }
-        const timeout = setTimeout(() => {
-            console.warn('⚠️ ICE gathering timed out, proceeding with available candidates');
-            resolve();
-        }, timeoutMs);
-        const check = () => {
-            if (pc.iceGatheringState === 'complete') {
-                clearTimeout(timeout);
-                resolve();
-            }
-        };
-        pc.addEventListener('icegatheringstatechange', check);
-    });
-}
-
 // ─── MICROPHONE ──────────────────────────────────────
 export async function requestMicrophonePermission(): Promise<boolean> {
     if (permissionRequested && localStream) return true;
@@ -129,11 +111,9 @@ export async function createOffer(
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    // Wait for all ICE candidates before sending — ensures TURN candidates are included
-    await waitForIceGathering(pc);
-
+    // Send offer immediately — ICE candidates trickle via onicecandidate
     socket.emit('webrtc:offer', { callId, offer: pc.localDescription, targetId });
-    console.log('📤 Offer sent with', pc.localDescription?.sdp?.match(/a=candidate/g)?.length ?? 0, 'candidates');
+    console.log('📤 Offer sent to', targetId);
 }
 
 // ─── RECEIVER: HANDLE OFFER + CREATE ANSWER ──────────
@@ -159,11 +139,9 @@ export async function handleOffer(
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
-    // Wait for all ICE candidates before sending answer
-    await waitForIceGathering(pc);
-
+    // Send answer immediately — ICE candidates trickle via onicecandidate
     socket.emit('webrtc:answer', { callId, answer: pc.localDescription, targetId: callerId });
-    console.log('📤 Answer sent with', pc.localDescription?.sdp?.match(/a=candidate/g)?.length ?? 0, 'candidates');
+    console.log('📤 Answer sent to', callerId);
 }
 
 // ─── HANDLE ANSWER ───────────────────────────────────

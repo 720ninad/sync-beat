@@ -96,10 +96,10 @@ export function useWebRTC({ callId, targetId, isCaller }: UseWebRTCProps) {
         const init = async () => {
             try {
                 if (isCaller) {
-                    // Delay to give receiver time to mount and register listeners
+                    // Small delay to ensure receiver has mounted and registered listeners
                     setTimeout(async () => {
                         await createOffer(callId, targetId, onRemoteStream);
-                    }, 2000);
+                    }, 500);
                 } else {
                     // No action needed — offer will arrive after caller's 2s delay
                     console.log('📡 Receiver ready, waiting for offer...');
