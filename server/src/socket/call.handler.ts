@@ -4,6 +4,7 @@ import { callSessions, listenHistory, syncSessions } from '../db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { sendPushNotification } from '../lib/push';
 import { users } from '../db/schema';
+import { getAudioUrl } from '../lib/ytdlp';
 
 export function registerCallHandlers(io: Server, socket: Socket) {
     const caller = socket.data.user;
@@ -200,6 +201,15 @@ export function registerCallHandlers(io: Server, socket: Socket) {
     // ─── SYNC: START SONG ────────────────────────────────
     socket.on('sync:start', async ({ callId, trackUrl, trackTitle, trackEmoji, trackId, serverTime, pickerUserId }: any) => {
         const broadcastTime = serverTime || Date.now();
+
+        // Pre-warm YouTube audio URL cache so the receiver's first stream request is fast
+        if (trackUrl) {
+            const ytMatch = trackUrl.match(/\/stream\/([^/?#]+)/);
+            if (ytMatch) {
+                getAudioUrl(ytMatch[1]).catch(() => { });
+                console.log(`🔥 Pre-warming audio cache for videoId: ${ytMatch[1]}`);
+            }
+        }
 
         // Save sync session to DB if we have trackId
         if (trackId && callId) {

@@ -37,6 +37,8 @@ export class SyncEngine {
 
     // How far ahead to schedule playback start (gives both clients time to buffer)
     private static readonly SCHEDULE_AHEAD_MS = 800;
+    // Extra buffer for YouTube streams which need more time to start
+    private static readonly SCHEDULE_AHEAD_MS_YOUTUBE = 5000;
     // Drift correction threshold — nudge if off by more than this
     private static readonly DRIFT_THRESHOLD_MS = 150;
     // Drift correction interval
@@ -113,6 +115,15 @@ export class SyncEngine {
             this._onPlaybackStatus,
         );
         this.sound = sound;
+
+        // Explicitly notify that track is loaded so UI unblocks immediately
+        this.onStatus({
+            isPlaying: false,
+            positionMs: 0,
+            durationMs: track.durationMs ?? 0,
+            isLoaded: true,
+        });
+
         console.log('✅ Track loaded:', track.title);
     }
 
@@ -131,8 +142,10 @@ export class SyncEngine {
     async emitStart(): Promise<number> {
         if (!this.track) return 0;
         await this.measureClockOffset();
-        // Schedule start SCHEDULE_AHEAD_MS in the future so receiver has time to buffer
-        const startAt = this.serverNow() + SyncEngine.SCHEDULE_AHEAD_MS;
+        // Use a longer schedule window for YouTube streams (need time to buffer)
+        const isYouTube = this.track.url.includes('/stream/');
+        const aheadMs = isYouTube ? SyncEngine.SCHEDULE_AHEAD_MS_YOUTUBE : SyncEngine.SCHEDULE_AHEAD_MS;
+        const startAt = this.serverNow() + aheadMs;
         getSocket()?.emit('sync:start', {
             callId: this.callId,
             trackUrl: this.track.url,
@@ -142,7 +155,7 @@ export class SyncEngine {
             serverTime: startAt,       // future scheduled time
             pickerUserId: this.myUserId,
         });
-        console.log(`📡 sync:start scheduled for T+${SyncEngine.SCHEDULE_AHEAD_MS}ms (serverTime=${startAt})`);
+        console.log(`📡 sync:start scheduled for T+${aheadMs}ms (serverTime=${startAt})`);
         return startAt;
     }
 
