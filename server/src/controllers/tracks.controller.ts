@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { db } from '../db';
-import { tracks, likedTracks } from '../db/schema';
+import { tracks, likedTracks, syncSessions, listenHistory } from '../db/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { uploadToR2, deleteFromR2, generateTrackKey } from '../lib/r2';
 import { getAudioUrl, searchYouTube } from '../lib/ytdlp';
@@ -212,6 +212,11 @@ export async function deleteTrack(req: Request, res: Response) {
                 // Continue with DB deletion even if R2 deletion fails
             }
         }
+
+        // Delete related records first to avoid FK violations
+        await db.delete(syncSessions).where(eq(syncSessions.trackId, trackId));
+        await db.delete(listenHistory).where(eq(listenHistory.trackId, trackId));
+        await db.delete(likedTracks).where(eq(likedTracks.trackId, trackId));
 
         // Delete from DB
         await db.delete(tracks).where(eq(tracks.id, trackId));
