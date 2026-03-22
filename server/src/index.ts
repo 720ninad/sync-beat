@@ -121,6 +121,31 @@ app.get('/health', async (req, res) => {
     }
 });
 
+// Debug endpoint — check if yt-dlp is installed and working
+app.get('/health/ytdlp', (req, res) => {
+    const { exec } = require('child_process');
+    exec('yt-dlp --version', { timeout: 10000 }, (err: any, stdout: string, stderr: string) => {
+        if (err) {
+            res.status(500).json({
+                installed: false,
+                error: err.message,
+                stderr,
+                path: process.env.PATH,
+            });
+            return;
+        }
+        // Also check ffmpeg
+        exec('ffmpeg -version', { timeout: 10000 }, (ffErr: any, ffStdout: string) => {
+            res.json({
+                installed: true,
+                ytdlpVersion: stdout.trim(),
+                ffmpeg: ffErr ? 'not found' : ffStdout.split('\n')[0],
+                path: process.env.PATH,
+            });
+        });
+    });
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/forgot-password', forgotPasswordRoutes);
 app.use('/api/friends', friendsRoutes);
