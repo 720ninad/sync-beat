@@ -1,33 +1,48 @@
 import { useEffect } from 'react';
-import { router, Slot } from 'expo-router';
+import { router, Slot, usePathname } from 'expo-router';
 import { View, StyleSheet, Platform } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { getToken } from '../src/lib/storage';
-import { connectSocket, getSocket, setOnReconnect, pingSocket } from '../src/lib/socket';
+import { connectSocket, disconnectSocket, getSocket, setOnReconnect, pingSocket } from '../src/lib/socket';
 import { registerCallListeners, unregisterCallListeners } from '../src/lib/call';
 import { getCallSession } from '../src/lib/callSession';
 import { toast } from '../src/lib/toast';
 import { setupNotificationListeners } from '../src/lib/notifications';
 import { ErrorBoundary } from '../src/components/ErrorBoundary';
 
+// Routes that should NOT have an active socket connection
+const UNAUTH_ROUTES = ['/', '/login', '/signup', '/forgot-password'];
+
 export default function RootLayout() {
+    const pathname = usePathname();
+
+    // ─── DISCONNECT SOCKET ON UNAUTH ROUTES ──────────────
+    // Prevents ghost "online" status when a new tab opens on login page
+    useEffect(() => {
+        if (UNAUTH_ROUTES.includes(pathname)) {
+            disconnectSocket();
+        }
+    }, [pathname]);
 
     // ─── INIT SOCKET + CALL LISTENERS ────────────────────
     useEffect(() => {
         const init = async () => {
             try {
                 const token = await getToken();
-                if (token) {
-                    // setOnReconnect fires on EVERY connect event — including the first one.
-                    // So we register listeners here only, not eagerly after connectSocket().
-                    setOnReconnect(() => {
-                        unregisterCallListeners();
-                        registerCallListeners();
-                        pingSocket();
-                    });
-                    // Just initiate the connection — listeners bind when 'connect' fires above
-                    await connectSocket();
-                }
+                if (!token) return;
+
+                // Don't connect socket on unauthenticated routes
+                if (UNAUTH_ROUTES.includes(pathname)) return;
+
+                // setOnReconnect fires on EVERY connect event — including the first one.
+                // So we register listeners here only, not eagerly after connectSocket().
+                setOnReconnect(() => {
+                    unregisterCallListeners();
+                    registerCallListeners();
+                    pingSocket();
+                });
+                // Just initiate the connection — listeners bind when 'connect' fires above
+                await connectSocket();
             } catch (err: any) {
                 console.error('Socket init error:', err);
                 if (err.message === 'Invalid token' || err.message === 'No token found') {
@@ -37,13 +52,14 @@ export default function RootLayout() {
         };
         init();
         return () => { unregisterCallListeners(); };
-    }, []);
+    }, [pathname]);
 
     // ─── GLOBAL PRESENCE PING (keeps Redis TTL alive on all screens) ─────
     useEffect(() => {
+        if (UNAUTH_ROUTES.includes(pathname)) return;
         const interval = setInterval(pingSocket, 25000);
         return () => clearInterval(interval);
-    }, []);
+    }, [pathname]);
 
     // ─── RELOAD RECOVERY ─────────────────────────────────
     useEffect(() => {
