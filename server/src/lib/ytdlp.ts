@@ -33,6 +33,26 @@ const YTDLP_CMD = [
 
 console.log(`🎵 yt-dlp resolved to: ${YTDLP_CMD}`);
 
+// Returns --cookies flag if a cookies file is configured via env
+function getCookiesArg(): string {
+    // Option 1: direct file path
+    const cookiesPath = process.env.YTDLP_COOKIES_FILE;
+    if (cookiesPath && fs.existsSync(cookiesPath)) {
+        return `--cookies "${cookiesPath}"`;
+    }
+    // Option 2: cookies content in env var — write to temp file once
+    const cookiesContent = process.env.YTDLP_COOKIES_CONTENT;
+    if (cookiesContent) {
+        const tmpPath = path.join('/tmp', 'yt-cookies.txt');
+        if (!fs.existsSync(tmpPath)) {
+            fs.writeFileSync(tmpPath, cookiesContent, 'utf8');
+            console.log('🍪 Wrote YouTube cookies to', tmpPath);
+        }
+        return `--cookies "${tmpPath}"`;
+    }
+    return '';
+}
+
 export async function getAudioUrl(videoId: string): Promise<string | null> {
     const cached = await redis.get(`audio:${videoId}`);
     if (cached) {
@@ -42,9 +62,10 @@ export async function getAudioUrl(videoId: string): Promise<string | null> {
 
     return new Promise((resolve) => {
         const url = `https://www.youtube.com/watch?v=${videoId}`;
-        const command = `${YTDLP_CMD} -f bestaudio -g "${url}"`;
+        const cookiesArg = getCookiesArg();
+        const command = `${YTDLP_CMD} -f bestaudio -g ${cookiesArg} --extractor-args "youtube:player_client=web" "${url}"`;
 
-        exec(command, { timeout: 25000 }, async (error, stdout, stderr) => {
+        exec(command, { timeout: 30000 }, async (error, stdout, stderr) => {
             if (error) {
                 console.error("yt-dlp error:", error.killed ? "Process timed out" : error.message);
                 return resolve(null);
@@ -79,7 +100,7 @@ export async function searchYouTube(query: string, limit = 10): Promise<YTSearch
     }
 
     return new Promise((resolve) => {
-        const command = `${YTDLP_CMD} "ytsearch${limit}:${query}" --dump-json --no-playlist --flat-playlist --no-warnings`;
+        const command = `${YTDLP_CMD} "ytsearch${limit}:${query}" --dump-json --no-playlist --flat-playlist --no-warnings ${getCookiesArg()}`;
 
         exec(command, { timeout: 25000 }, async (error, stdout) => {
             if (error) {
