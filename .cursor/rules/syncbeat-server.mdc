@@ -1,0 +1,43 @@
+---
+description: SyncBeat server structure and patterns
+globs: server/**/*
+alwaysApply: false
+---
+
+# Server Structure
+
+```
+server/src/
+├── index.ts             # Express app, Socket.io, keep-alive ping
+├── db/schema.ts         # Drizzle table definitions
+├── controllers/         # auth, friends, tracks, history, notifications
+├── routes/
+│   └── tracks.routes.ts # /stream/:videoId is PUBLIC (before authMiddleware)
+├── socket/
+│   ├── socket.handler.ts
+│   └── call.handler.ts  # call:* and sync:* events
+├── middleware/
+│   ├── auth.ts          # JWT authMiddleware → req.user
+│   └── rateLimit.ts     # generalLimiter disabled in dev
+└── lib/
+    ├── redis.ts         # Upstash (ioredis, TLS), setUserOnline/Offline
+    ├── ytdlp.ts         # getAudioUrl, searchYouTube
+    ├── r2.ts            # uploadToR2, deleteFromR2, getSignedDownloadUrl
+    └── env.ts           # Validates required env vars on startup
+```
+
+## Auth
+
+- `authMiddleware` sets `req.user` from JWT
+- Socket auth: token in `socket.handshake.auth.token`, verified in `io.use()`
+
+## Redis (Upstash)
+
+- URL: `rediss://` (TLS) — use ioredis, not the `redis` package
+- `setUserOnline` / `setUserOffline` manage presence + DB `isOnline` flag
+- Client emits `presence:ping` every 25s to keep TTL alive
+
+## Rate Limiting
+
+- `generalLimiter` commented out in `index.ts` (dev)
+- `authLimiter`, `otpLimiter`, `uploadLimiter` in `middleware/rateLimit.ts`

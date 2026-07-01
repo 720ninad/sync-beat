@@ -1,0 +1,36 @@
+---
+description: SyncBeat client structure and patterns
+globs: client/**/*
+alwaysApply: false
+---
+
+# Client Structure
+
+```
+client/
+├── app/
+│   ├── _layout.tsx          # Root — socket init, call listeners, push setup
+│   ├── (main)/              # home, library, profile, friend-requests, etc.
+│   └── call/                # outgoing, incoming, pick-song, player, ended
+└── src/
+    ├── lib/
+    │   ├── api.ts           # Axios → SERVER_URL/api
+    │   ├── audioPlayer.ts   # Singleton AudioPlayerService (expo-av)
+    │   ├── socket.ts        # connectSocket, getSocket, setOnReconnect
+    │   ├── call.ts          # initiateCall, acceptCall, registerCallListeners
+    │   ├── callSession.ts   # Persists call state (AsyncStorage)
+    │   ├── syncEngine.ts    # Sync logic for player screen
+    │   └── storage.ts       # JWT in SecureStore
+    └── components/
+```
+
+## Socket Reconnect (critical on mobile)
+
+- `socket.ts` exposes `setOnReconnect(cb)` — called on every `connect` event
+- `_layout.tsx` re-runs `unregisterCallListeners` + `registerCallListeners` on reconnect
+- Sockets drop on background/foreground; listeners must be re-registered
+
+## Auth
+
+- JWT stored in SecureStore via `storage.ts`
+- On `Invalid token` socket error: clear token, redirect to login

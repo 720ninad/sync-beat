@@ -1,0 +1,26 @@
+---
+description: Deployment config and server environment variables
+globs: "{server/render.yaml,client/app.json,server/src/lib/env.ts}"
+alwaysApply: false
+---
+
+# Deployment
+
+- Server: Render free tier (Oregon), keep-alive ping every 10 min
+- Build: `pip install yt-dlp && apt-get install -y ffmpeg || true && npm install && npm run build`
+- Env vars: `syncbeat-secrets` group in Render dashboard
+- Client API URL: set in `client/app.json` → `extra.apiUrl`
+- Push notifications only work in `eas build` builds, not Expo Go
+
+## Server Environment Variables
+
+| Var | Purpose |
+|---|---|
+| `JWT_SECRET` | JWT signing |
+| `DATABASE_URL` | Neon PostgreSQL (pooled connection string) |
+| `REDIS_URL` | Upstash Redis (`rediss://` TLS) |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Cloudflare R2 |
+| `R2_BUCKET_NAME` | `syncbeat-tracks` |
+| `R2_PUBLIC_URL` | Public R2 CDN URL |
+| `RESEND_API_KEY`, `FROM_EMAIL` | Email (OTP) |
+| `RENDER_EXTERNAL_URL` | Auto-set by Render, keep-alive ping |

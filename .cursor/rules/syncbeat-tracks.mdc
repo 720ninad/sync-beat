@@ -1,0 +1,29 @@
+---
+description: Track types, audio playback, and YouTube streaming
+globs: "**/*{track,audio,music,ytdlp}*"
+alwaysApply: false
+---
+
+# Track Casing Mismatch
+
+- Drizzle returns camelCase: `externalId`, `externalSource`, `previewUrl`, `fileUrl`
+- Search results return snake_case: `external_id`, `source`, `preview_url`
+- Always check both: `const ytId = track.external_id || track.externalId`
+
+## Track Types (mimeType)
+
+- `audio/mpeg` / `audio/wav` — uploaded file in R2, `fileUrl` set
+- `external` — YouTube track, `fileUrl` empty, `externalSource: 'youtube'`, `externalId` is video ID
+
+## Audio Playback Priority (audioPlayer.ts)
+
+1. `fileUrl` + mimeType !== `external` → R2 direct URL
+2. `preview_url` → direct URL (search result)
+3. `previewUrl` → direct URL (saved DB track)
+4. `externalId`/`external_id` + source === `youtube` → `${SERVER_URL}/api/tracks/stream/${id}`
+
+## YouTube Pipeline
+
+- Search: `yt-dlp "ytsearch10:query" --dump-json` — metadata only, cached 30 min (`ytsearch:{query}:{limit}`)
+- Play: `GET /api/tracks/stream/:videoId` (public, no auth)
+- Stream: `getAudioUrl(videoId)` → yt-dlp extracts URL → cached 1hr (`audio:{videoId}`) → server proxies with Range header support

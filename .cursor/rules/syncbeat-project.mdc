@@ -1,0 +1,27 @@
+---
+description: SyncBeat project overview, stack, and database schema
+alwaysApply: true
+---
+
+# SyncBeat
+
+Real-time synchronized music listening app. Two friends call each other, one picks a song, and both hear it in perfect sync.
+
+## Stack
+
+**Server** (`/server`): Node.js + TypeScript, Express 5, Socket.io 4, PostgreSQL (Drizzle/Neon), Upstash Redis (`rediss://`, ioredis), Cloudflare R2, JWT + bcrypt, Resend, Expo Push, yt-dlp.
+
+**Client** (`/client`): Expo SDK 55 + React Native 0.83, expo-router, expo-av, expo-secure-store, socket.io-client, axios, local useState (zustand installed but unused).
+
+## Database Tables
+
+| Table | Key columns |
+|---|---|
+| `users` | id, name, username, email, passwordHash, pushToken, isOnline, lastSeenAt |
+| `friendships` | senderId, receiverId, status (pending/accepted/declined/blocked) |
+| `tracks` | uploaderId, title, artist, duration, fileUrl, mimeType, isPublic, externalId, externalSource, previewUrl |
+| `liked_tracks` | userId, trackId |
+| `call_sessions` | callerId, receiverId, status (ringing/active/ended/missed/declined) |
+| `sync_sessions` | callSessionId, trackId, hostId, isPlaying, positionSecs, scheduledAt |
+| `listen_history` | userId, trackId, listenedWithId, callSessionId, durationSecs |
+| `otp_codes` | email, code, used, expiresAt |

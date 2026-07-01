@@ -1,0 +1,25 @@
+---
+description: Socket rooms, call flow, and sync events
+globs: "**/*{socket,call,sync}*"
+alwaysApply: false
+---
+
+# Socket Rooms
+
+- Every user joins `user:{userId}` on connect
+- Call participants join `call:{callId}` on initiate/accept
+- Presence: `friend:online`, `friend:offline` → emitted to `user:{friendId}`
+
+## Events
+
+**Call:** `call:incoming`, `call:accepted`, `call:declined`, `call:cancelled`, `call:ended`, `call:missed`
+
+**Sync:** `sync:start`, `sync:pause`, `sync:resume`, `sync:seek`, `sync:state`, `sync:ping/pong`
+
+## Call Flow
+
+1. A taps call → `call:initiate` → server creates `call_sessions` row, emits `call:incoming` to B + push notification
+2. B accepts → `call:accept` → status `active`, emits `call:accepted` to A
+3. Both navigate to `pick-song`
+4. One picks track → `sync:start` to `call:{callId}` → both navigate to `player`
+5. Either ends → `call:end` → server saves `listen_history`, emits `call:ended`
