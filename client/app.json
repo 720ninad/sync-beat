@@ -44,7 +44,7 @@
       ]
     ],
     "extra": {
-      "apiUrl": "http://localhost:3000/api"
+      "apiUrl": "https://sync-beat-18qf.onrender.com/api"
     }
   }
 }
