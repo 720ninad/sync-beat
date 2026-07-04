@@ -3,7 +3,6 @@ import { db } from "../db";
 import { tracks, likedTracks, syncSessions, listenHistory } from "../db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { uploadToR2, deleteFromR2, generateTrackKey } from "../lib/r2";
-import { getAudioUrl } from "../lib/ytdlp";
 import { searchJioSaavn } from "../lib/jiosaavn";
 // External music search interfaces
 interface ExternalTrack {
@@ -15,7 +14,7 @@ interface ExternalTrack {
   image?: string;
   preview_url?: string | null;
   external_id: string;
-  source: "jiosaavn" | "youtube";
+  source: "jiosaavn";
 }
 
 // ─── UPLOAD TRACK ────────────────────────────────────
@@ -364,49 +363,4 @@ function mapToTrack(song: {
   };
 }
 
-// ─── STREAM TRACK ────────────────────────────────────
-export async function streamTrack(req: Request, res: Response) {
-  try {
-    const { videoId } = req.params;
-    const audioUrl = await getAudioUrl(
-      Array.isArray(videoId) ? videoId[0] : videoId,
-    );
 
-    if (!audioUrl) {
-      res.status(404).json({ error: "Could not extract audio URL" });
-      return;
-    }
-
-    const rangeHeader = req.headers["range"];
-
-    // Forward range header to upstream so seeking works
-    const upstreamHeaders: Record<string, string> = {};
-    if (rangeHeader) upstreamHeaders["Range"] = rangeHeader;
-
-    const upstream = await fetch(audioUrl, { headers: upstreamHeaders });
-
-    if (!upstream.ok || !upstream.body) {
-      res.status(502).json({ error: "Failed to fetch audio stream" });
-      return;
-    }
-
-    const contentType = upstream.headers.get("content-type") || "audio/mpeg";
-    const contentLength = upstream.headers.get("content-length");
-    const contentRange = upstream.headers.get("content-range");
-
-    // Mirror the upstream status (206 Partial Content or 200)
-    const status = upstream.status === 206 ? 206 : 200;
-
-    res.status(status);
-    res.setHeader("Content-Type", contentType);
-    res.setHeader("Accept-Ranges", "bytes");
-    if (contentLength) res.setHeader("Content-Length", contentLength);
-    if (contentRange) res.setHeader("Content-Range", contentRange);
-
-    const { Readable } = await import("stream");
-    Readable.fromWeb(upstream.body as any).pipe(res);
-  } catch (err) {
-    console.error("Stream error:", err);
-    res.status(500).json({ error: "Streaming failed" });
-  }
-}

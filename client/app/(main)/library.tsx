@@ -706,10 +706,7 @@ export default function LibraryScreen() {
                                     {track.album && ` · ${track.album}`}
                                     {track.duration ? ` · ${formatDuration(track.duration)}` : ''}
                                     {tab === 'search' && (
-                                        <Text style={s.sourceTag}> · {track.source === 'youtube' ? 'YouTube' : 'JioSaavn'}</Text>
-                                    )}
-                                    {tab !== 'search' && track.externalSource === 'youtube' && (
-                                        <Text style={s.sourceTag}> · YouTube</Text>
+                                        <Text style={s.sourceTag}> · JioSaavn</Text>
                                     )}
                                     {((tab === 'search' && track.preview_url) ||
                                         (tab !== 'search' && track.previewUrl)) && (

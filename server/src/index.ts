@@ -16,11 +16,11 @@ import { registerSocketHandlers } from './socket/socket.handler';
 import historyRoutes from './routes/history.routes';
 import notificationsRoutes from './routes/notifications.routes';
 import turnRoutes from './routes/turn.routes';
-import { authLimiter, generalLimiter, otpLimiter, uploadLimiter } from './middleware/rateLimit';
-
+import { authLimiter, otpLimiter, uploadLimiter } from './middleware/rateLimit';
 
 dotenv.config();
-import { env } from './lib/env';
+// Validates required env vars on startup — exits process if any are missing
+import './lib/env';
 
 const app = express();
 const httpServer = createServer(app);
@@ -107,8 +107,6 @@ io.on('connection', async (socket) => {
 
 app.use(cors());
 app.use(express.json());
-// Rate limiting disabled for development
-// app.use(generalLimiter);
 app.get('/', (req, res) => {
     res.json({ status: 'ok', message: 'Welcome to SyncBeat API 🎵' });
 });
@@ -120,47 +118,6 @@ app.get('/health', async (req, res) => {
     } catch (error) {
         res.status(500).json({ status: 'error', db: 'disconnected' });
     }
-});
-
-// Debug endpoint — check if yt-dlp is installed and working
-app.get('/health/ytdlp', (req: any, res: any) => {
-    const { exec } = require('child_process');
-    const nodePath = require('path');
-    const fs = require('fs');
-    const candidates = [
-        'yt-dlp',
-        '/opt/render/project/src/server/yt-dlp',
-        nodePath.join(__dirname, '../../yt-dlp'),
-        nodePath.join(__dirname, '../yt-dlp'),
-        nodePath.join(process.cwd(), 'yt-dlp'),
-        '/home/render/.local/bin/yt-dlp',
-        '/usr/local/bin/yt-dlp',
-    ];
-    const fsInfo: any = {
-        __dirname,
-        cwd: process.cwd(),
-        fileExists: {} as Record<string, boolean>,
-    };
-    candidates.forEach(c => {
-        try { fsInfo.fileExists[c] = fs.existsSync(c); } catch { fsInfo.fileExists[c] = false; }
-    });
-    const results: Record<string, string> = {};
-    let checked = 0;
-    candidates.forEach(cmd => {
-        exec(`${cmd} --version`, { timeout: 10000 }, (err: any, stdout: string) => {
-            results[cmd] = err ? 'not found' : stdout.trim();
-            checked++;
-            if (checked === candidates.length) {
-                exec('ffmpeg -version', { timeout: 10000 }, (ffErr: any, ffStdout: string) => {
-                    res.json({
-                        candidates: results,
-                        ffmpeg: ffErr ? 'not found' : ffStdout.split('\n')[0],
-                        fsInfo,
-                    });
-                });
-            }
-        });
-    });
 });
 
 app.use('/api/auth', authRoutes);

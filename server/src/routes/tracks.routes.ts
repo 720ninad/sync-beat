@@ -10,7 +10,6 @@ import {
     deleteTrack,
     searchExternalTracks,
     addExternalTrack,
-    streamTrack,
 } from '../controllers/tracks.controller';
 import { authMiddleware } from '../middleware/auth';
 
@@ -21,17 +20,14 @@ const upload = multer({
     limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
 });
 
-// Public — no auth required for streaming
-router.get('/stream/:videoId', streamTrack);
-
 router.use(authMiddleware);
 
 router.post('/', upload.single('file'), uploadTrack);
 router.get('/my', getMyTracks);
 router.get('/public', getPublicTracks);
 router.get('/liked', getLikedTracks);
-router.get('/search', searchExternalTracks);        // New: Search external tracks
-router.post('/external', addExternalTrack);         // New: Add external track to library
+router.get('/search', searchExternalTracks);
+router.post('/external', addExternalTrack);
 router.post('/:id/like', likeTrack);
 router.delete('/:id/like', unlikeTrack);
 router.delete('/:id', deleteTrack);

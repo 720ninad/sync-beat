@@ -10,7 +10,7 @@ export interface ExternalTrack {
     image?: string;
     preview_url?: string | null;
     external_id: string;
-    source: 'jiosaavn' | 'youtube';
+    source: 'jiosaavn';
 }
 
 const authHeader = async () => ({

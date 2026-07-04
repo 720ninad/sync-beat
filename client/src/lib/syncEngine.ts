@@ -39,8 +39,6 @@ export class SyncEngine {
 
   // How far ahead to schedule playback start (gives both clients time to buffer)
   private static readonly SCHEDULE_AHEAD_MS = 800;
-  // Extra buffer for YouTube streams which need more time to start
-  private static readonly SCHEDULE_AHEAD_MS_YOUTUBE = 5000;
   // How far ahead to schedule a seek/resume so both clients land on the same
   // wall-clock moment even while the CDN is still re-buffering the new position.
   private static readonly SEEK_AHEAD_MS = 700;
@@ -110,10 +108,10 @@ export class SyncEngine {
     if (this.sound) {
       try {
         await this.sound.stopAsync();
-      } catch {}
+      } catch { }
       try {
         await this.sound.unloadAsync();
-      } catch {}
+      } catch { }
       this.sound = null;
     }
     this.track = track;
@@ -162,12 +160,7 @@ export class SyncEngine {
   async emitStart(): Promise<number> {
     if (!this.track) return 0;
     await this.measureClockOffset();
-    // Use a longer schedule window for YouTube streams (need time to buffer)
-    const isYouTube = this.track.url.includes("/stream/");
-    const aheadMs = isYouTube
-      ? SyncEngine.SCHEDULE_AHEAD_MS_YOUTUBE
-      : SyncEngine.SCHEDULE_AHEAD_MS;
-    const startAt = this.serverNow() + aheadMs;
+    const startAt = this.serverNow() + SyncEngine.SCHEDULE_AHEAD_MS;
     getSocket()?.emit("sync:start", {
       callId: this.callId,
       trackUrl: this.track.url,
@@ -292,7 +285,7 @@ export class SyncEngine {
         await this.sound!.setPositionAsync(positionMs);
         this.pausedAtMs = positionMs;
         this.isPaused = true;
-      } catch {}
+      } catch { }
     }
   }
 
@@ -339,7 +332,7 @@ export class SyncEngine {
     if (this.isPaused) {
       try {
         await this.sound.setPositionAsync(positionMs);
-      } catch {}
+      } catch { }
       this.pausedAtMs = positionMs;
       this.playStartServerTime = this.serverNow() - positionMs;
       getSocket()?.emit("sync:seek", {
@@ -373,7 +366,7 @@ export class SyncEngine {
       await this.sound.setPositionAsync(positionMs);
       this.pausedAtMs = positionMs;
       this.isPaused = true;
-    } catch {}
+    } catch { }
   }
 
   // ─── 11. HANDLE INCOMING RESUME ──────────────────────
@@ -391,7 +384,7 @@ export class SyncEngine {
     if (this.isPaused) {
       try {
         await this.sound.setPositionAsync(positionMs);
-      } catch {}
+      } catch { }
       this.pausedAtMs = positionMs;
       this.playStartServerTime = this.serverNow() - positionMs;
       return;
@@ -435,7 +428,7 @@ export class SyncEngine {
       // Too far off for a gentle nudge — hard seek and reset speed.
       try {
         await this.sound.setPositionAsync(expectedMs);
-      } catch {}
+      } catch { }
       this._resetRate();
       console.log(`🔧 Hard-corrected drift ${drift > 0 ? "+" : ""}${drift}ms`);
       return;
@@ -450,7 +443,7 @@ export class SyncEngine {
       // Rate change unsupported — fall back to a seek.
       try {
         await this.sound.setPositionAsync(expectedMs);
-      } catch {}
+      } catch { }
     }
   }
 
@@ -471,7 +464,7 @@ export class SyncEngine {
     }) => void,
   ): () => void {
     const socket = getSocket();
-    if (!socket) return () => {};
+    if (!socket) return () => { };
 
     const onSyncStart = async ({
       trackUrl,
@@ -513,7 +506,7 @@ export class SyncEngine {
     if (!this.sound) return;
     try {
       await this.sound.setVolumeAsync(Math.max(0, Math.min(1, volume)));
-    } catch {}
+    } catch { }
   }
 
   // ─── 16. DESTROY ─────────────────────────────────────
@@ -522,10 +515,10 @@ export class SyncEngine {
     if (this.sound) {
       try {
         await this.sound.stopAsync();
-      } catch {}
+      } catch { }
       try {
         await this.sound.unloadAsync();
-      } catch {}
+      } catch { }
       this.sound = null;
     }
   }
@@ -543,10 +536,10 @@ export class SyncEngine {
     this._resetRate();
     try {
       await this.sound.pauseAsync();
-    } catch {}
+    } catch { }
     try {
       await this.sound.setPositionAsync(positionMs);
-    } catch {}
+    } catch { }
 
     const delay = scheduledTime - this.serverNow();
     if (delay > 0) {
@@ -556,7 +549,7 @@ export class SyncEngine {
       const catchUp = positionMs + Math.abs(delay);
       try {
         await this.sound.setPositionAsync(catchUp);
-      } catch {}
+      } catch { }
     }
 
     await this._safePlay(this.sound);
@@ -571,7 +564,7 @@ export class SyncEngine {
   // Restore normal playback speed after a gentle drift nudge.
   private _resetRate(): void {
     if (this.rateAdjusted && this.sound) {
-      this.sound.setRateAsync(1, true).catch(() => {});
+      this.sound.setRateAsync(1, true).catch(() => { });
     }
     this.rateAdjusted = false;
   }

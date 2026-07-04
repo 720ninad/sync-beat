@@ -104,7 +104,7 @@ export default function PickSongScreen() {
         setMyUserId(id);
         myUserRef.current = id;
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // ─── CREATE OR REUSE ENGINE ──────────────────────────
@@ -117,7 +117,7 @@ export default function PickSongScreen() {
       const engine = new SyncEngine(
         callId || "",
         myUserId || "unknown",
-        () => {},
+        () => { },
       );
       setSyncEngine(engine);
       syncRef.current = engine;
@@ -203,24 +203,12 @@ export default function PickSongScreen() {
 
       // Determine the correct audio URL
       let audioUrl: string;
-      const ytId = track.external_id || track.externalId;
       if (track.fileUrl && track.mimeType !== "external") {
         // Uploaded track
         audioUrl = track.fileUrl;
       } else if (track.preview_url || track.previewUrl) {
         // External track with direct URL (JioSaavn) — search uses snake_case, DB uses camelCase
         audioUrl = track.preview_url || track.previewUrl;
-      } else if (
-        ytId &&
-        (track.source === "youtube" || track.externalSource === "youtube")
-      ) {
-        // YouTube track — proxy through stream endpoint
-        const serverUrl =
-          (
-            await import("expo-constants")
-          ).default.expoConfig?.extra?.apiUrl?.replace("/api", "") ||
-          "http://localhost:3000";
-        audioUrl = `${serverUrl}/api/tracks/stream/${ytId}`;
       } else {
         toast.error("No audio available for this track");
         setStarting(null);

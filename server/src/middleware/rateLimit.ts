@@ -1,7 +1,7 @@
 import rateLimit from 'express-rate-limit';
 
 // ─── GENERAL API ─────────────────────────────────────
-// 300 requests per minute per IP (increased for development)
+// 300 requests per minute per IP
 export const generalLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 300,

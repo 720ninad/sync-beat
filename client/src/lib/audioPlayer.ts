@@ -1,9 +1,4 @@
 import { Audio } from 'expo-av';
-import Constants from 'expo-constants';
-
-const SERVER_URL =
-    Constants.expoConfig?.extra?.apiUrl?.replace('/api', '') ||
-    'http://localhost:3000';
 
 // Allow audio to play over silent switch on iOS and in background
 Audio.setAudioModeAsync({
@@ -22,10 +17,6 @@ interface Track {
     preview_url?: string;
     previewUrl?: string;
     mimeType?: string;
-    source?: string;
-    externalSource?: string;
-    external_id?: string;   // search results (snake_case)
-    externalId?: string;    // saved DB rows (camelCase from Drizzle)
 }
 
 class AudioPlayerService {
@@ -41,9 +32,6 @@ class AudioPlayerService {
             // Determine the audio URL
             let audioUrl: string | null = null;
 
-            // Resolve the video ID regardless of casing (search = external_id, DB = externalId)
-            const ytId = track.external_id || track.externalId;
-
             if (track.fileUrl && track.mimeType !== 'external') {
                 // Uploaded track — use R2 file URL directly
                 audioUrl = track.fileUrl;
@@ -51,9 +39,6 @@ class AudioPlayerService {
                 audioUrl = track.preview_url;
             } else if (track.previewUrl) {
                 audioUrl = track.previewUrl;
-            } else if (ytId && (track.source === 'youtube' || track.externalSource === 'youtube')) {
-                // YouTube track (search result or saved) — proxy through stream endpoint
-                audioUrl = `${SERVER_URL}/api/tracks/stream/${ytId}`;
             }
 
             if (!audioUrl) {
